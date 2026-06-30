@@ -21,8 +21,15 @@ class PolicyEngine:
     def decide(self, request: CapabilityRequest) -> PolicyDecision:
         if request.capability == "tool:add":
             return PolicyDecision(PolicyAction.ALLOW, "safe local arithmetic tool")
+        if request.capability.startswith("connector:fake:tool:"):
+            return PolicyDecision(PolicyAction.ALLOW, "safe fake connector tool")
         if request.capability in DENIED_CAPABILITIES:
             return PolicyDecision(PolicyAction.DENY, "capability is denied")
+        if request.capability.startswith("connector:"):
+            return PolicyDecision(
+                PolicyAction.REQUIRE_APPROVAL,
+                "connector capability requires approval",
+            )
         if request.capability in APPROVAL_REQUIRED_CAPABILITIES:
             return PolicyDecision(
                 PolicyAction.REQUIRE_APPROVAL,

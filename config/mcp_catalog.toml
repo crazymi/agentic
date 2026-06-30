@@ -1,0 +1,145 @@
+# Curated MCP candidates for this local harness.
+#
+# Admission policy:
+# - disabled by default
+# - reviewed and allowlisted before execution
+# - write/send/submit/destructive actions must pass through policy + approval
+# - secrets are references to local env/credential stores, never inline values
+
+[catalog]
+version = 1
+default_enabled = false
+install_mode = "manual_review_only"
+notes = "Prepared for Milestone 7+ live connectors. M4 only provides the connector/MCP boundary."
+
+[servers.filesystem]
+enabled = false
+priority = 1
+category = "local_context"
+source = "https://github.com/modelcontextprotocol/servers"
+transport = "stdio"
+package = "@modelcontextprotocol/server-filesystem"
+recommended_for = ["obsidian_vault", "local_project_files", "idea_archive"]
+risk = "high"
+approval_required = ["write", "delete", "move"]
+notes = "Useful for local vault/project access. Scope to explicit roots only."
+
+[servers.git]
+enabled = false
+priority = 1
+category = "development"
+source = "https://github.com/modelcontextprotocol/servers"
+transport = "stdio"
+package = "mcp-server-git"
+recommended_for = ["repo_inspection", "self_improvement", "coding_workflow"]
+risk = "medium"
+approval_required = ["commit", "reset", "checkout", "merge", "push"]
+notes = "Read-only git status/diff/log can be allowed; mutating operations need approval."
+
+[servers.github]
+enabled = false
+priority = 2
+category = "development"
+source = "https://github.com/modelcontextprotocol/servers"
+transport = "stdio"
+package = "@modelcontextprotocol/server-github"
+recommended_for = ["issues", "prs", "remote_repo_context"]
+risk = "high"
+approval_required = ["comment", "create_issue", "update_pr", "merge", "push"]
+notes = "Defer until credential handling and outbound action approvals are hardened."
+
+[servers.fetch]
+enabled = false
+priority = 1
+category = "web_context"
+source = "https://github.com/modelcontextprotocol/servers"
+transport = "stdio"
+package = "mcp-server-fetch"
+recommended_for = ["web_research", "article_fetch", "documentation_context"]
+risk = "medium"
+approval_required = ["authenticated_fetch", "form_submit"]
+notes = "Good first web-context connector. Network egress should be logged."
+
+[servers.memory]
+enabled = false
+priority = 2
+category = "memory"
+source = "https://github.com/modelcontextprotocol/servers"
+transport = "stdio"
+package = "@modelcontextprotocol/server-memory"
+recommended_for = ["personal_memory", "cross_session_context"]
+risk = "medium"
+approval_required = ["forget", "bulk_import", "bulk_delete"]
+notes = "Potentially useful later, but the repo already has local memory/resource stores."
+
+[servers.playwright]
+enabled = false
+priority = 1
+category = "browser_automation"
+source = "https://github.com/microsoft/playwright-mcp"
+transport = "stdio"
+package = "@playwright/mcp"
+recommended_for = ["interpark_watcher", "browser_macros", "authenticated_web_workflows"]
+risk = "high"
+approval_required = ["click_submit", "form_submit", "purchase", "login", "download", "upload"]
+notes = "Primary candidate for browser automation. Start with observe/extract before submit actions."
+
+[servers.obsidian]
+enabled = false
+priority = 1
+category = "knowledge_base"
+source = "community_mcp_or_filesystem_adapter"
+transport = "stdio"
+package = "review_required"
+recommended_for = ["idea_capture", "note_linking", "periodic_synthesis"]
+risk = "high"
+approval_required = ["note_write", "note_delete", "tag_mutation"]
+notes = "Prefer filesystem-scoped vault integration first; community Obsidian MCPs need code review."
+
+[servers.gmail]
+enabled = false
+priority = 1
+category = "inbox"
+source = "community_mcp_or_custom_connector"
+transport = "stdio_or_local_oauth"
+package = "review_required"
+recommended_for = ["wsj_newsletter_ingest", "portfolio_news_triage"]
+risk = "high"
+approval_required = ["send_email", "modify_label", "delete_email", "mark_read_bulk"]
+notes = "Use read-only Gmail scopes first. Existing fixture connector remains default for tests."
+
+[servers.google_drive]
+enabled = false
+priority = 3
+category = "documents"
+source = "https://github.com/modelcontextprotocol/servers"
+transport = "stdio"
+package = "@modelcontextprotocol/server-gdrive"
+recommended_for = ["document_context", "exported_newsletters"]
+risk = "high"
+approval_required = ["write_file", "share_file", "delete_file"]
+notes = "Lower priority than Gmail/Obsidian for current requirements."
+
+[servers.sqlite]
+enabled = false
+priority = 2
+category = "local_data"
+source = "https://github.com/modelcontextprotocol/servers"
+transport = "stdio"
+package = "@modelcontextprotocol/server-sqlite"
+recommended_for = ["ad_hoc_state_queries", "dashboard_debugging"]
+risk = "medium"
+approval_required = ["insert", "update", "delete", "ddl"]
+notes = "Useful after durable runtime stabilizes; read-only queries are safest first."
+
+[servers.search]
+enabled = false
+priority = 2
+category = "web_context"
+source = "provider_specific"
+transport = "http_or_stdio"
+package = "brave_search_or_tavily_or_custom"
+recommended_for = ["web_research", "market_research", "startup_idea_scan"]
+risk = "medium"
+approval_required = ["authenticated_search", "paid_api_use"]
+notes = "Pick one provider later. Keep API keys outside config."

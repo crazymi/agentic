@@ -60,6 +60,32 @@ state database is:
 traces/state/agentic.sqlite3
 ```
 
+Milestones 4-6 add the pre-M7 extension substrate:
+
+- connector and MCP boundary
+- local instruction-only skills
+- SQLite memory/resource stores
+- local Obsidian markdown note skeleton
+
+Prepared MCP/skill catalogs:
+
+- MCP candidates and activation policy: `docs/mcp_skill_catalog.md`
+- disabled-by-default MCP server catalog: `config/mcp_catalog.toml`
+- local instruction-only skills: `skills/*/SKILL.md`
+
+The catalog intentionally does not auto-install marketplace code. Filesystem,
+Git, Fetch, Playwright, Gmail, Obsidian, and related connectors must be
+reviewed and allowlisted before live use.
+
+Milestone 7 starts the first real workflow path with newsletter analysis:
+
+- Gmail-like fixture connector
+- newsletter ingestion into resources
+- goal-directed findings with source citations
+- insight writeback into memory
+
+Live Gmail OAuth and WSJ production ingestion are still separate follow-up work.
+
 Check config, prompt files, and local GGUF model paths:
 
 ```bash

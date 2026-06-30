@@ -7,6 +7,7 @@ from typing import Literal
 
 from agentic.agents.master import MasterAgent
 from agentic.models.local_gguf import ModelResponse
+from agentic.models.response_sanitizer import sanitize_user_facing_answer
 from agentic.traces.logger import TraceLogger
 
 
@@ -21,7 +22,8 @@ class MasterDecision:
 
     @classmethod
     def answer_directly(cls, answer: str) -> "MasterDecision":
-        return cls(action="answer", answer=answer)
+        cleaned = sanitize_user_facing_answer(answer) or answer.strip()
+        return cls(action="answer", answer=cleaned)
 
     @classmethod
     def delegate(cls, task: str) -> "MasterDecision":
@@ -83,7 +85,10 @@ class MasterTurn:
         if addition is not None:
             a, b = addition
             return MasterDecision.delegate(f"Use add tool to compute {a}+{b}.")
-        return MasterDecision.answer_directly(response.text)
+        answer = sanitize_user_facing_answer(response.text)
+        if not answer:
+            answer = "답변을 정리하지 못했습니다."
+        return MasterDecision.answer_directly(answer)
 
     def _record_decision(self, decision: MasterDecision) -> None:
         payload = {"action": decision.action}
