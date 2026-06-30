@@ -8,6 +8,7 @@ def render_home(
     *,
     messages: list[dict[str, Any]],
     approvals: list[dict[str, Any]],
+    tasks: list[dict[str, Any]] | None = None,
     traces: list[dict[str, Any]],
 ) -> str:
     message_items = "\n".join(
@@ -16,6 +17,7 @@ def render_home(
         for item in messages[-20:]
     )
     approval_items = "\n".join(_approval_item(item) for item in approvals)
+    task_items = "\n".join(_task_item(item) for item in (tasks or []))
     trace_items = "\n".join(
         f"<li><code>{escape(str(item.get('event_type', '')))}</code></li>"
         for item in traces[-20:]
@@ -53,6 +55,10 @@ def render_home(
     <ul>{approval_items or "<li>No pending approvals</li>"}</ul>
   </section>
   <section>
+    <h2>Tasks</h2>
+    <ul>{task_items or "<li>No tasks yet</li>"}</ul>
+  </section>
+  <section>
     <h2>Recent Trace</h2>
     <ul>{trace_items}</ul>
   </section>
@@ -75,6 +81,35 @@ def _approval_item(item: dict[str, Any]) -> str:
     </form>
     <form action="/approvals/{approval_id}/deny" method="post">
       <button type="submit">Deny</button>
+    </form>
+  </div>
+</li>"""
+
+
+def _task_item(item: dict[str, Any]) -> str:
+    task_id = escape(str(item.get("task_id", "")))
+    kind = escape(str(item.get("kind", "")))
+    status = escape(str(item.get("status", "")))
+    result = item.get("result") or {}
+    error = item.get("error") or {}
+    final_answer = escape(str(result.get("final_answer", ""))) if isinstance(result, dict) else ""
+    error_message = escape(str(error.get("message", ""))) if isinstance(error, dict) else ""
+    heartbeat = escape(str(item.get("last_heartbeat_at") or ""))
+    detail = final_answer or error_message
+    return f"""
+<li>
+  <strong>{status}</strong> <code>{task_id}</code> {kind}<br>
+  {detail}<br>
+  <small>heartbeat: {heartbeat}</small>
+  <div class="row">
+    <form action="/tasks/{task_id}/cancel" method="post">
+      <button type="submit">Cancel</button>
+    </form>
+    <form action="/tasks/{task_id}/pause" method="post">
+      <button type="submit">Pause</button>
+    </form>
+    <form action="/tasks/{task_id}/resume" method="post">
+      <button type="submit">Resume</button>
     </form>
   </div>
 </li>"""

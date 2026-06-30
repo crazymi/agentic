@@ -52,6 +52,14 @@ Start the local web channel:
 .venv/bin/python -m agentic.app.cli serve --host 127.0.0.1 --port 8765
 ```
 
+The web channel uses the Milestone 3 durable runtime. Chat requests are stored as
+SQLite-backed tasks and executed by a bounded background worker. The default
+state database is:
+
+```bash
+traces/state/agentic.sqlite3
+```
+
 Check config, prompt files, and local GGUF model paths:
 
 ```bash
