@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+
+# Packaging / build output
+build/
+dist/
+*.egg-info/
+
+# Test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+coverage.xml
+junit*.xml
+
+# Evaluation outputs
+evals/artifacts/
+evals/results/
+evals/reports/
+evals/*.jsonl
+evals/*.log
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config/*.local.toml
+
+# Local Codex / agent workspace state
+.agents/
+.codex/
+
+# Local model artifacts
+models/*
+!models/.gitkeep
+*.gguf
+*.ggml
+*.safetensors
+*.bin
+
+# Runtime checkouts and build products
+runtimes/
+!runtimes/.gitkeep
+
+# Runtime traces / logs
+traces/*
+!traces/.gitkeep
+*.log
+*.tmp
+.DS_Store
