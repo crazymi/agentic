@@ -1,40 +1,24 @@
-# Milestone 7 Plan: Newsletter And Research Workflows
+# Milestone 7 Plan: Workflow Kernel
 
-Milestone 7 starts real user-facing workflows. The first target is newsletter analysis from mail-like resources.
+Milestone 7 is now the framework milestone for workflow design, proposal, approval, activation, scheduling, and run orchestration.
 
-Current implementation starts with:
+The previous newsletter-first M7 plan is preserved as a vertical probe, not the architecture.
 
-- Gmail fixture connector
-- newsletter ingestion into `ResourceStore`
-- goal-directed deterministic analyzer
-- source/citation retention
-- insight memory writeback
-- prepared skill/MCP catalog for live Gmail, web research, Obsidian linking, and browser watcher workflows
+Canonical documents:
 
-Real Gmail OAuth/API integration is intentionally separate because it requires credentials and approval policy.
+- `docs/framework_reference_review.md`
+- `docs/workflow_kernel_design.md`
+- `docs/milestone7_workflow_kernel_plan.md`
 
-Reference preparation:
+Newsletter, social trend intelligence, idea synthesis, browser watcher, and coding workflows should all be represented as `WorkflowSpec` probes. If a use case cannot fit the workflow kernel, improve the kernel instead of adding a bespoke runtime path.
 
-- `docs/mcp_skill_catalog.md`
-- `config/mcp_catalog.toml`
-- `skills/gmail-newsletter-analysis/SKILL.md`
-- `skills/web-research/SKILL.md`
-- `skills/obsidian-knowledge-linking/SKILL.md`
-- `skills/browser-watcher/SKILL.md`
+## Acceptance Summary
 
-## Acceptance
-
-- WSJ-like newsletter messages can be discovered from a connector
-- messages are stored as email resources with source metadata
-- analysis can run against a named goal
-- output separates findings and evidence
-- findings cite source `gmail://message/<id>` URIs
-- insight report is stored in memory
-
-## Deferred
-
-- live Gmail OAuth
-- WSJ account/web extraction
-- send/archive email actions
-- model-assisted report writing
-- scheduler-based daily runs
+- classify user requests into framework work classes
+- create workflow design sessions from vague requests
+- ask one missing-info question at a time
+- render workflow proposals before activation
+- persist versioned workflow specs and runs
+- map specs to capabilities, policy, approvals, schedules, and artifacts
+- execute fake collect/analyze/report workflow runs through the existing task runtime
+- prove multiple vertical probes can be represented without bespoke architecture

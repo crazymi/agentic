@@ -9,6 +9,8 @@ def render_home(
     messages: list[dict[str, Any]],
     approvals: list[dict[str, Any]],
     tasks: list[dict[str, Any]] | None = None,
+    workflows: list[dict[str, Any]] | None = None,
+    workflow_runs: list[dict[str, Any]] | None = None,
     traces: list[dict[str, Any]],
 ) -> str:
     message_items = "\n".join(
@@ -18,6 +20,8 @@ def render_home(
     )
     approval_items = "\n".join(_approval_item(item) for item in approvals)
     task_items = "\n".join(_task_item(item) for item in (tasks or []))
+    workflow_items = "\n".join(_workflow_item(item) for item in (workflows or []))
+    workflow_run_items = "\n".join(_workflow_run_item(item) for item in (workflow_runs or []))
     trace_items = "\n".join(
         f"<li><code>{escape(str(item.get('event_type', '')))}</code></li>"
         for item in traces[-20:]
@@ -57,6 +61,19 @@ def render_home(
   <section>
     <h2>Tasks</h2>
     <ul>{task_items or "<li>No tasks yet</li>"}</ul>
+  </section>
+  <section>
+    <h2>Workflows</h2>
+    <form action="/workflows/design" method="post">
+      <textarea name="message" placeholder="Describe a workflow to design"></textarea>
+      <br>
+      <button type="submit">Design Workflow</button>
+    </form>
+    <ul>{workflow_items or "<li>No workflows yet</li>"}</ul>
+  </section>
+  <section>
+    <h2>Workflow Runs</h2>
+    <ul>{workflow_run_items or "<li>No workflow runs yet</li>"}</ul>
   </section>
   <section>
     <h2>Recent Trace</h2>
@@ -112,4 +129,46 @@ def _task_item(item: dict[str, Any]) -> str:
       <button type="submit">Resume</button>
     </form>
   </div>
+</li>"""
+
+
+def _workflow_item(item: dict[str, Any]) -> str:
+    workflow_id = escape(str(item.get("workflow_id", "")))
+    name = escape(str(item.get("name", "")))
+    status = escape(str(item.get("status", "")))
+    goal = escape(str(item.get("goal", "")))
+    version = escape(str(item.get("version", "")))
+    return f"""
+<li>
+  <strong>{status}</strong> <code>{workflow_id}</code> v{version}<br>
+  {name}<br>
+  <small>{goal}</small>
+  <div class="row">
+    <form action="/workflows/{workflow_id}/approve" method="post">
+      <button type="submit">Approve</button>
+    </form>
+    <form action="/workflows/{workflow_id}/activate" method="post">
+      <button type="submit">Activate</button>
+    </form>
+    <form action="/workflows/{workflow_id}/pause" method="post">
+      <button type="submit">Pause</button>
+    </form>
+    <form action="/workflows/{workflow_id}/run" method="post">
+      <button type="submit">Run</button>
+    </form>
+  </div>
+</li>"""
+
+
+def _workflow_run_item(item: dict[str, Any]) -> str:
+    run_id = escape(str(item.get("run_id", "")))
+    workflow_id = escape(str(item.get("workflow_id", "")))
+    status = escape(str(item.get("status", "")))
+    result = escape(str(item.get("result") or item.get("error") or ""))
+    artifacts = escape(", ".join(str(value) for value in item.get("artifacts", [])))
+    return f"""
+<li>
+  <strong>{status}</strong> <code>{run_id}</code> for <code>{workflow_id}</code><br>
+  {result}<br>
+  <small>artifacts: {artifacts}</small>
 </li>"""

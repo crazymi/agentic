@@ -21,6 +21,10 @@ The harness should be useful before it is general. It should be extensible, but 
 
 ## Core Use Cases
 
+These use cases are concrete probes for the harness. They are not the architecture.
+
+The architecture should extract repeated framework primitives from them and make future workflows possible without adding bespoke runtime paths.
+
 ### 1. WSJ Newsletter Analysis
 
 The user subscribes to WSJ and receives daily newsletters through Gmail.
@@ -114,6 +118,37 @@ Required primitives:
 - Approval for booking, payment, credential use, or externally visible actions
 - Trace with screenshots, logs, and browser events
 
+### 5. User-Designed Scheduled Intelligence Workflows
+
+The user wants to describe a rough recurring intelligence workflow in natural language, review the harness proposal, approve it, and let the harness build and operate it.
+
+Example:
+
+- "주식 커뮤니티 글을 주기적으로 모아서 트렌드 보고서로 알려줘."
+- "1분마다 최근 글 10개를 모으고, 30분마다 인기글/핵심 키워드를 분석해줘."
+- "결과를 저장하고, 일정 간격으로 subagent가 트렌드/키워드/이상 신호를 분석해서 보고서로 보내줘."
+
+Desired behavior:
+
+- classify whether the request is immediate, one-off, deep research, scheduled workflow, watcher, or coding workflow
+- interview the user only for missing decisions
+- propose a workflow spec before activation
+- map the workflow to sources, skills, tools, connectors, MCP servers, generated artifacts, schedules, reports, and approvals
+- persist raw collected items, summaries, reports, traces, and run history
+- support pause, resume, edit, retire, and replay
+
+Required primitives:
+
+- Intent Router
+- Workflow Designer
+- Workflow Spec and lifecycle
+- Workflow Builder
+- Scheduler and Hook interface
+- Source Connector abstraction
+- Artifact Registry for generated scripts/configs/reports
+- Capability Admission and approval policy
+- Report and notification pipeline
+
 ## Repeated Patterns
 
 The use cases repeat the same framework needs:
@@ -132,6 +167,10 @@ These repeated patterns become the roadmap primitives:
 - Channel
 - Approval
 - Policy
+- Intent Router
+- Workflow Designer
+- Workflow Spec
+- Workflow Builder
 - Scheduler
 - Background Task
 - Tool
@@ -139,6 +178,7 @@ These repeated patterns become the roadmap primitives:
 - MCP Connector
 - Skill
 - Hook
+- Artifact Registry
 - Memory
 - Resource Store
 - Trace/Replay

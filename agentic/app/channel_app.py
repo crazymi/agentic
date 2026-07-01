@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from agentic.app.server import create_app
 from agentic.approvals.service import ApprovalService
 from agentic.approvals.store import ApprovalStore
+from agentic.artifacts import ArtifactStore
 from agentic.config.settings import AppConfig
 from agentic.runtime.channel_loop import ChannelLoop
 from agentic.runtime.daemon import DurableRuntime, default_state_db
@@ -15,6 +16,7 @@ from agentic.runtime.full_loop import FullLoopRuntime
 from agentic.runtime.task_control import TaskControl
 from agentic.tasks.store import TaskStore
 from agentic.traces.logger import TraceLogger
+from agentic.workflow_kernel import WorkflowBuilder, WorkflowDesigner, WorkflowInterpreter, WorkflowStore
 
 
 def create_channel_app(config: AppConfig) -> FastAPI:
@@ -35,6 +37,15 @@ def create_channel_app(config: AppConfig) -> FastAPI:
         pool=durable.pool,
         trace=trace,
     )
+    workflow_store = WorkflowStore(_workflow_db(config))
+    artifact_store = ArtifactStore(_artifact_db(config))
+    workflow_builder = WorkflowBuilder(
+        WorkflowInterpreter(
+            workflow_store=workflow_store,
+            artifact_store=artifact_store,
+            trace=trace,
+        )
+    )
     app = create_app(
         channel_loop=channel_loop,
         durable_channel_loop=durable_channel_loop,
@@ -42,6 +53,9 @@ def create_channel_app(config: AppConfig) -> FastAPI:
         trace=trace,
         task_store=durable.store,
         task_control=task_control,
+        workflow_store=workflow_store,
+        workflow_builder=workflow_builder,
+        workflow_designer=WorkflowDesigner(),
     )
 
     @app.on_event("startup")
@@ -62,3 +76,11 @@ def _approval_store(config: AppConfig) -> ApprovalStore:
 
 def _task_store(config: AppConfig) -> TaskStore:
     return TaskStore(default_state_db(config))
+
+
+def _workflow_db(config: AppConfig) -> Path:
+    return config.trace_dir / "state" / "workflows.sqlite3"
+
+
+def _artifact_db(config: AppConfig) -> Path:
+    return config.trace_dir / "state" / "artifacts.sqlite3"

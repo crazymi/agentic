@@ -243,110 +243,111 @@ Evaluation:
 - eval: synthesis references multiple stored ideas
 - manual test: Obsidian note appears in expected vault location
 
-## Milestone 7: Newsletter And Research Workflows
+## Milestone 7: Workflow Kernel
 
-Goal: turn incoming newsletters and web material into goal-directed analysis.
+Goal: create the framework layer that turns vague natural-language requests into reviewed, durable, runnable workflows.
 
 Scope:
 
-- Gmail connector or MCP-backed mail resource
-- newsletter ingestion and deduplication
-- standing analysis goals
-- citation/source retention
-- report generation
-- approval before sending or archiving mail
+- request intent classification
+- workflow design sessions and proposal review
+- durable workflow specs and run records
+- workflow lifecycle and versioning
+- capability planning and admission
+- workflow builder and interpreter v0
+- scheduler/hook interface v0
+- web UI for proposals, activation, pause, and run status
 
 Modules:
 
-- `agentic/connectors/gmail.py`
-- `agentic/workflows/newsletter.py`
-- `skills/newsletter_analysis/`
+- `agentic/workflow_kernel/`
+- `agentic/scheduler/`
+- `agentic/artifacts/`
+- `agentic/app/server.py`
 
 Acceptance criteria:
 
-- harness can identify WSJ newsletter emails
-- extracted content is stored as a resource
-- analysis can be run against a named goal
-- output separates facts, model judgments, and follow-up tasks
-- citations point back to source email/resource
+- harness can classify a request as immediate, one-off task, deep research, scheduled workflow, watcher workflow, coding workflow, or unknown
+- harness can turn a vague recurring request into a workflow design session
+- designer asks one missing-info question at a time
+- proposed workflow can be approved, persisted, activated, paused, and retired
+- approved workflow can run through fake collect/analyze/report steps
+- sensitive capabilities require deterministic policy and approval
 
 Evaluation:
 
-- fixture test: sample newsletter parsed
-- eval: startup idea extraction returns grounded ideas
-- eval: portfolio relevance analysis includes confidence and reasons
-- policy test: authenticated mail action requires approval
+- intent router tests across example request classes
+- workflow lifecycle transition tests
+- fake workflow execution test
+- policy/admission tests for generated scripts and external actions
+- probe tests proving newsletter, social trend, idea synthesis, browser watcher, and coding requests can be represented as workflow specs
 
-## Milestone 8: Browser Automation Workbench
+Plan:
 
-Goal: support agent-assisted creation and supervision of Playwright/Chromium automations.
+- See `docs/milestone7_workflow_kernel_plan.md`.
+- See `docs/workflow_kernel_design.md`.
+- See `docs/framework_reference_review.md`.
+
+## Milestone 8: Source, Capability, And Artifact Runtime
+
+Goal: make workflow specs useful by connecting them to reviewed source connectors, generated artifacts, and capability admission.
 
 Scope:
 
-- browser connector/tool wrapper
+- source connector abstraction for web pages, feeds, Gmail-like mail, browser pages, local files, and repo state
+- artifact registry for generated scripts, crawler configs, reports, screenshots, and datasets
+- generated script review and dry-run path
+- connector/MCP allowlist activation
 - credential reference model
-- script generation workspace
-- supervised trial-and-error loop
-- screenshot/log capture
-- background watcher integration
-- notification on event match
+- rate limit, dedupe, and retention policies
 
 Modules:
 
-- `agentic/connectors/browser.py`
-- `agentic/workflows/browser_macro.py`
+- `agentic/sources/`
+- `agentic/artifacts/`
 - `agentic/credentials/`
-- `macros/`
+- `agentic/connectors/`
+- `agentic/policy/`
 
 Acceptance criteria:
 
-- user can provide URL plus credential reference
-- harness can inspect the page through Playwright
-- generated watcher script is stored as an artifact
-- script can run in background task pool
-- watcher can notify user on target condition
-- booking/purchase actions require explicit approval
+- workflow can declare a source without hardcoding a vertical implementation
+- source collection can store raw resources and derived artifacts
+- generated script cannot run before admission and approval
+- connector/MCP activation is allowlisted and traceable
+- credential values never enter prompts, docs, traces, or specs
 
 Evaluation:
 
-- fake site test: watcher detects available seat
-- integration test: Playwright run emits screenshots and trace events
-- policy test: submit/purchase action requires approval
-- recovery test: browser task can restart after crash
+- fake source connector tests
+- artifact admission tests
+- credential reference tests
+- policy tests for browser submit, email send, file write, shell, booking, payment, and generated script execution
 
-## Milestone 9: Coding Agent Workflow
+## Milestone 9: Workflow Probe Pack
 
-Goal: let the harness improve itself and work on repositories with bounded autonomy.
+Goal: validate the framework with real user-shaped probes without letting any one probe become the architecture.
 
-Scope:
+Probe scenarios:
 
-- repo inspection skill
-- plan/patch/test/summarize workflow
-- shell/git/file tools behind approval policy
-- test runner integration
-- code review and self-review loop
-- branch/task isolation
-
-Modules:
-
-- `agentic/workflows/coding.py`
-- `agentic/tools/shell.py`
-- `agentic/tools/git.py`
-- `skills/coding_loop/`
+- newsletter analysis: scheduled mail-like source ingestion, grounded analysis, report, notification
+- social trend intelligence: scheduled community source collection, dedupe, trend rollup, report
+- idea synthesis: channel capture, memory write, note linking, periodic synthesis
+- browser watcher: browser/page source inspection, condition detection, alert, optional generated watcher artifact
+- coding workflow: repo inspection, plan, patch, test, report, approval for risky actions
 
 Acceptance criteria:
 
-- harness can inspect its own repo and propose a scoped plan
-- file edits are traceable
-- tests run and output is summarized
-- risky shell/git actions require approval
-- final report lists changed files and verification
+- each probe is represented as a `WorkflowSpec`
+- at least one run per probe can execute with fake/default-safe sources
+- no probe adds a bespoke daemon, scheduler, or top-level runtime path
+- reports and artifacts are linked to workflow runs and traces
 
 Evaluation:
 
-- fixture repo test: fix a simple bug
-- integration test: patch + test + trace
-- policy test: destructive git command is blocked without approval
+- fixture eval per probe
+- full fake end-to-end eval from user request to workflow proposal to approved run
+- regression check that existing Phase 1, M2, M3, M4, M5, and M6 behavior still works
 
 ## Milestone 10: 24/7 Hardening
 

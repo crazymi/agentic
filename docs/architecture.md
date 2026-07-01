@@ -5,7 +5,7 @@ This harness is a personal local-first agent runtime. The implementation should 
 The system should grow around a narrow core:
 
 ```text
-message/event -> policy/approval -> task runtime -> agent loop -> tools/connectors -> trace/memory
+message/event -> intent/workflow -> policy/approval -> task runtime -> agent loop -> tools/connectors -> trace/memory
 ```
 
 ## System Map
@@ -16,6 +16,8 @@ flowchart TD
     Web["Local Web Channel<br/>chat, inbox, approvals"]
     Ntfy["ntfy Channel<br/>push notifications"]
     EventBus["Runtime Event Bus"]
+    Intent["Intent Router"]
+    Workflow["Workflow Kernel<br/>design, spec, builder, run"]
     Approval["Approval Service"]
     Policy["Policy Engine"]
     Scheduler["Scheduler"]
@@ -32,10 +34,15 @@ flowchart TD
     User --> Web
     Ntfy --> User
     Web --> EventBus
+    EventBus --> Intent
+    Intent --> Workflow
+    Workflow --> Approval
     EventBus --> Approval
     Approval --> Policy
     Policy --> TaskPool
     Scheduler --> EventBus
+    Workflow --> Scheduler
+    Workflow --> TaskPool
     TaskPool --> Master
     Master --> Sub
     Master --> Skills
@@ -99,6 +106,8 @@ sequenceDiagram
     actor User
     participant Channel as Channel
     participant Runtime as Runtime
+    participant Intent as Intent Router
+    participant Workflow as Workflow Kernel
     participant Master as Master Agent
     participant Skill as Skill Loader
     participant Task as Task Pool
@@ -110,9 +119,16 @@ sequenceDiagram
     User->>Channel: request
     Channel->>Runtime: inbound_message
     Runtime->>Trace: user_message_received
+    Runtime->>Intent: classify request
+
+    alt workflow design or scheduled work
+        Intent->>Workflow: create or update design session
+        Workflow-->>Channel: proposal, question, or approval request
+    else immediate or one-off work
     Runtime->>Skill: select applicable procedures
     Runtime->>Master: prompt + skills + context
     Master-->>Runtime: answer, plan, or delegation
+    end
 
     alt delegated work
         Runtime->>Task: create background task
@@ -136,6 +152,8 @@ sequenceDiagram
 | Module | Owns | Does not own |
 | --- | --- | --- |
 | Channel | user messages, notifications, approval UI | model reasoning, tool logic |
+| Intent Router | classify user requests into work classes | executing workflows |
+| Workflow Kernel | design sessions, workflow specs, lifecycle, builder, run orchestration | connector implementation details |
 | Approval | approval lifecycle and decision records | deciding task strategy |
 | Policy | capability rules and safety gates | executing tools |
 | Scheduler | time-based event creation | long-running execution internals |
@@ -148,6 +166,43 @@ sequenceDiagram
 | Memory | durable user context and internal records | raw external source of truth |
 | Resource Store | external artifacts and references | user preference policy |
 | Trace | event history and replay | operational decisions |
+
+## Workflow Kernel
+
+The Workflow Kernel is the framework layer that prevents the project from becoming a set of bespoke apps.
+
+```mermaid
+flowchart TD
+    Request["Natural language request"]
+    Router["Intent Router"]
+    Session["Workflow Design Session"]
+    Proposal["Workflow Proposal"]
+    Spec["Workflow Spec<br/>versioned, durable"]
+    Builder["Workflow Builder"]
+    Run["Workflow Run"]
+    Scheduler["Scheduler / Hook"]
+    Capabilities["Tools / Connectors / MCP / Scripts"]
+    Stores["Memory / Resources / Artifacts"]
+    Report["Report / Notification"]
+
+    Request --> Router
+    Router --> Session
+    Session --> Proposal
+    Proposal --> Spec
+    Spec --> Builder
+    Builder --> Scheduler
+    Scheduler --> Run
+    Run --> Capabilities
+    Capabilities --> Stores
+    Stores --> Report
+```
+
+Rules:
+
+- Workflow specs are data-first and persisted.
+- Workflow steps own control flow; agents provide intelligence inside steps.
+- Generated scripts are artifacts and require admission before execution.
+- Use cases such as newsletters, social trends, browser watchers, coding, and idea synthesis are probes for the same workflow kernel.
 
 ## Tool, Connector, MCP, Skill
 

@@ -77,14 +77,19 @@ The catalog intentionally does not auto-install marketplace code. Filesystem,
 Git, Fetch, Playwright, Gmail, Obsidian, and related connectors must be
 reviewed and allowlisted before live use.
 
-Milestone 7 starts the first real workflow path with newsletter analysis:
+Milestone 7 is now the Workflow Kernel milestone:
 
-- Gmail-like fixture connector
-- newsletter ingestion into resources
-- goal-directed findings with source citations
-- insight writeback into memory
+- intent routing
+- workflow design sessions
+- durable workflow specs and runs
+- capability admission
+- artifact registry
+- scheduler/hook interface
+- workflow review UI/API
+- fake probe workflows for newsletter, social trends, idea synthesis, browser watcher, and coding
 
-Live Gmail OAuth and WSJ production ingestion are still separate follow-up work.
+Newsletter analysis remains as a vertical probe. Live Gmail OAuth and WSJ
+production ingestion are still separate follow-up work after the kernel exists.
 
 Check config, prompt files, and local GGUF model paths:
 
