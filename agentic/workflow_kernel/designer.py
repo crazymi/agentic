@@ -190,6 +190,8 @@ class WorkflowDesigner:
             return "web_page"
         if any(token in text for token in ("repo", "repository", "리포", "코드")):
             return "repo"
+        if any(token in text for token in ("승인", "모바일", "ntfy", "채팅", "chat", "approval")):
+            return "channel"
         if any(token in text for token in ("idea", "아이디어", "메모", "노트")):
             return "channel"
         return ""
@@ -469,6 +471,6 @@ class WorkflowDesigner:
                 "payment_without_approval": "deny",
             },
             outputs=[{"type": slots["output"], "channel": slots.get("alert_path", "web")}],
-            evals=[{"type": "browser_transaction_fixture_probe", "required": True}],
+            evals=[{"type": "live_browser_transaction_probe", "required": True}],
             assumptions=assumptions,
         )

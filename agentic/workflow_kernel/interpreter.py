@@ -194,7 +194,19 @@ class WorkflowInterpreter:
         if step_type == StepType.NOTIFY:
             return {"notified": True, "channel": config.get("channel", "web")}
         if step_type == StepType.ASK_USER:
-            raise RuntimeError("ask_user step requires interactive runtime support")
+            answer = config.get("answer") or spec.inputs.get(str(config.get("slot") or ""))
+            if not answer:
+                raise RuntimeError("ask_user step requires an answer or interactive runtime support")
+            return {
+                "answered": True,
+                "slot": config.get("slot"),
+                "question": config.get("question"),
+                "answer": str(answer),
+            }
+        if step_type == StepType.BROWSER_OBSERVE:
+            raise RuntimeError("browser_observe step requires a real browser adapter")
+        if step_type == StepType.BROWSER_ACTION:
+            raise RuntimeError("browser_action step requires a real browser adapter")
         if step_type == StepType.APPROVAL:
             raise RuntimeError("approval step requires approval service integration")
         if step_type == StepType.RUN_SCRIPT:

@@ -8,7 +8,9 @@ from pathlib import Path
 from agentic.approvals.service import ApprovalService
 from agentic.approvals.store import ApprovalStore
 from agentic.artifacts import ArtifactStore
+from agentic.benchmarks import RealBenchmarkOptions, run_real_benchmark
 from agentic.config.settings import AppConfig, load_app_config
+from agentic.experience import ExperienceStore, run_requirement_smoke
 from agentic.models.local_gguf import LocalGGUFProvider
 from agentic.ops import HealthMonitor, run_operational_smoke
 from agentic.prompts.builder import PromptBuilder
@@ -39,6 +41,30 @@ def main() -> None:
     ops_smoke.add_argument("--model", default="", help="model id for --include-model")
     ops_smoke.add_argument("--model-max-tokens", type=int, default=0, help="override model max tokens for --include-model")
     ops_smoke.add_argument("--prompt", default="한국의 수도는 어디야? 답변만 한 문장으로 말해.", help="model smoke prompt")
+    req_smoke = subparsers.add_parser("requirements-smoke", help="run user-requirement harness probes")
+    req_smoke.add_argument("--state-dir", default="", help="optional state directory for requirement smoke stores")
+    req_smoke.add_argument("--experience-path", default="", help="optional JSONL experience log path")
+    req_smoke.add_argument(
+        "--no-persist-experience",
+        action="store_true",
+        help="do not append probe results to the experience log",
+    )
+    exp_list = subparsers.add_parser("experience-list", help="print recent experience events")
+    exp_list.add_argument("--experience-path", default="", help="optional JSONL experience log path")
+    exp_list.add_argument("--limit", type=int, default=20, help="number of events to print")
+    real_bench = subparsers.add_parser("real-bench", help="run live user-requirement benchmarks only")
+    real_bench.add_argument("--state-dir", default="", help="state directory for benchmark stores")
+    real_bench.add_argument("--experience-path", default="", help="optional JSONL experience log path")
+    real_bench.add_argument("--no-persist-experience", action="store_true", help="do not append results to experience")
+    real_bench.add_argument("--skip-network", action="store_true", help="skip live web crawls")
+    real_bench.add_argument("--skip-ntfy", action="store_true", help="skip real ntfy delivery probe")
+    real_bench.add_argument("--skip-model", action="store_true", help="skip real local model execution")
+    real_bench.add_argument("--model", default="", help="model id for real local model execution")
+    real_bench.add_argument("--model-max-tokens", type=int, default=16, help="max tokens for model probe")
+    real_bench.add_argument("--prompt", default="한국의 수도는 어디야? 답변만 한 문장으로 말해.", help="model prompt")
+    real_bench.add_argument("--reddit-url", default="", help="Reddit JSON URL to crawl")
+    real_bench.add_argument("--dcinside-url", default="", help="DCInside gallery URL to crawl")
+    real_bench.add_argument("--ticket-url", default="", help="official ticket URL for live browser transaction probe")
 
     ask = subparsers.add_parser("ask", help="run one full-loop agent turn")
     ask.add_argument("message", nargs="+", help="message to send to the full-loop runtime")
@@ -81,6 +107,20 @@ def main() -> None:
         return
     if args.command == "ops-smoke":
         _ops_smoke(config, args.state_dir, args.include_model, args.model, args.model_max_tokens, args.prompt)
+        return
+    if args.command == "requirements-smoke":
+        _requirements_smoke(
+            config,
+            args.state_dir,
+            args.experience_path,
+            not args.no_persist_experience,
+        )
+        return
+    if args.command == "experience-list":
+        _experience_list(config, args.experience_path, args.limit)
+        return
+    if args.command == "real-bench":
+        _real_bench(config, args)
         return
     if args.command == "ask":
         print(run_chat_once(config, " ".join(args.message)))
@@ -160,6 +200,58 @@ def _ops_smoke(
         model_id=model_id or None,
         model_max_tokens=model_max_tokens or None,
         model_prompt=prompt,
+    )
+    print(json.dumps(result.to_record(), ensure_ascii=False, indent=2, sort_keys=True))
+    if not result.ok:
+        raise SystemExit(1)
+
+
+def _requirements_smoke(
+    config: AppConfig,
+    state_dir: str,
+    experience_path: str,
+    persist_experience: bool,
+) -> None:
+    result = run_requirement_smoke(
+        config,
+        state_dir=state_dir or config.trace_dir / "state" / "requirements_smoke",
+        experience_path=experience_path or config.trace_dir / "experience.jsonl",
+        persist_experience=persist_experience,
+    )
+    print(json.dumps(result.to_record(), ensure_ascii=False, indent=2, sort_keys=True))
+    if not result.ok:
+        raise SystemExit(1)
+
+
+def _experience_list(config: AppConfig, experience_path: str, limit: int) -> None:
+    store = ExperienceStore(experience_path or config.trace_dir / "experience.jsonl")
+    print(
+        json.dumps(
+            [event.to_record() for event in store.list(limit=limit)],
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _real_bench(config: AppConfig, args: argparse.Namespace) -> None:
+    result = run_real_benchmark(
+        config,
+        RealBenchmarkOptions(
+            state_dir=args.state_dir or config.trace_dir / "state" / "real_bench",
+            experience_path=args.experience_path or config.trace_dir / "experience.jsonl",
+            persist_experience=not args.no_persist_experience,
+            include_network=not args.skip_network,
+            include_ntfy=not args.skip_ntfy,
+            include_model=not args.skip_model,
+            model_id=args.model,
+            model_max_tokens=args.model_max_tokens,
+            model_prompt=args.prompt,
+            reddit_url=args.reddit_url or RealBenchmarkOptions.reddit_url,
+            dcinside_url=args.dcinside_url or RealBenchmarkOptions.dcinside_url,
+            ticket_url=args.ticket_url,
+        ),
     )
     print(json.dumps(result.to_record(), ensure_ascii=False, indent=2, sort_keys=True))
     if not result.ok:

@@ -27,7 +27,7 @@ Implemented active milestones:
 Current roadmap milestone:
 
 - M10: 24/7 Hardening, in progress.
-- M11: Interactive Browser Transaction Runtime, started with planning/tooling backbone.
+- M11: Interactive Browser Transaction Runtime, started with planning/tooling backbone. Live execution remains blocked until a real browser adapter exists.
 
 ## Implemented Capabilities
 
@@ -39,7 +39,7 @@ Current roadmap milestone:
 - Prompt directory support via `prompts/`.
 - Chat template/system prompt handling for configured local runners.
 - Response sanitizer for model channel markers.
-- Real configured model paths for smoke runs; unit tests use local subprocess fixtures only inside evals.
+- Real configured model paths for smoke runs; developer tests do not count as product capability.
 
 Configured model candidates:
 
@@ -90,7 +90,7 @@ Configured model candidates:
 - Connector registry.
 - Connector tool bridge through policy.
 - MCP stdio JSON-RPC client adapter.
-- Local stdio MCP fixture evals.
+- Local stdio MCP protocol evals.
 - Curated disabled-by-default MCP catalog at `config/mcp_catalog.toml`.
 - MCP/skill preparation notes at `docs/mcp_skill_catalog.md`.
 
@@ -143,6 +143,12 @@ Prepared local skills include:
 - Scheduler store and due-runner v0.
 - Local web UI/API for workflow design, approve, activate, pause, run, and status.
 
+### Browser Transaction Contract
+
+- `agentic/browser/` defines browser observation and action result records.
+- Live browser automation remains blocked by `connector:browser` until a real Playwright/Chrome adapter is implemented and policy-approved.
+- No fixture browser adapter is counted as product capability.
+
 ### Tooling Backlog
 
 - `ToolingPlanner` converts capability gaps into concrete harness build requests.
@@ -150,6 +156,21 @@ Prepared local skills include:
 - Missing browser capabilities such as `connector:browser` become backlog items instead of silent failures.
 - Approval-required capabilities become policy/approval backlog items when a workflow needs them.
 - Web UI/API surfaces tooling requests beside planning sessions and workflow runs.
+
+### Experience Loop
+
+- `agentic.experience` records structured lessons from probes, smoke runs, decisions, and bottlenecks.
+- `requirements-smoke` runs user-shaped requirement probes without UI.
+- Probe results are written as machine-readable JSON and appended to `traces/experience.jsonl`.
+- `experience-list` prints recent experience events for retrieval before similar work.
+- Current probes cover WSJ/newsletter analysis, stock-community trend crawling, idea memory synthesis, harness self-improvement, browser ticket transactions, and mobile approval notifications.
+
+### Real User-Requirement Benchmark
+
+- `real-bench` is the current product-facing usefulness benchmark.
+- It attempts only real paths and records explicit blockers for missing credentials, URLs, network access, live connectors, or runtime tooling.
+- It does not count fake, dummy, synthetic, fixture, or preapproved shortcuts as capability.
+- Current probes attempt real memory capture/synthesis, repo inspection, Gmail/WSJ IMAP access when credentials exist, ntfy delivery, Reddit stock crawl, DCInside stock-gallery crawl, local GGUF model execution, and browser transaction readiness.
 
 ### Source, Capability, And Artifact Runtime
 
@@ -186,7 +207,7 @@ Production integrations are intentionally deferred:
 - No production WSJ ingestion.
 - No production Reddit/DCInside crawler.
 - No live Playwright browser automation execution.
-- No live browser transaction adapter yet; browser workflows currently produce planning sessions, workflow specs, capability gaps, and tooling backlog.
+- No live browser transaction adapter yet; live sites produce capability gaps/tooling backlog.
 - No shell/file/git coding agent with broad powers.
 - No autonomous script execution.
 - No public auth or multi-user deployment.
@@ -216,6 +237,7 @@ Core modules:
 - `agentic/resources/`: resource records, store, and Obsidian skeleton.
 - `agentic/workflow_kernel/`: intent, workflow specs/runs, designer, capability planner, interpreter.
 - `agentic/tooling/`: tooling gap planner and durable tooling backlog.
+- `agentic/experience/`: structured experience events and requirement smoke probes.
 - `agentic/scheduler/`: schedule model/store/runner.
 - `agentic/sources/`: source definitions, source items, local collectors, source runtime.
 - `agentic/credentials/`: secret-free credential references.
@@ -233,6 +255,10 @@ Important docs:
 - `docs/milestone10_status.md`
 - `docs/milestone11_browser_transaction_runtime_plan.md`
 - `docs/milestone11_status.md`
+- `docs/experience_loop.md`
+- `docs/real_benchmark.md`
+- `docs/real_benchmark_status.md`
+- `docs/requirements_smoke_status.md`
 - `docs/work_log.md`
 - `docs/legacy/`
 
@@ -292,6 +318,24 @@ Run operational smoke plus a real configured model call:
 
 ```bash
 .venv/bin/python -m agentic.app.cli ops-smoke --include-model --model master-gemma-q4 --model-max-tokens 256
+```
+
+Run script-only user requirement probes and append structured experience:
+
+```bash
+.venv/bin/python -m agentic.app.cli requirements-smoke
+```
+
+Run real user-requirement benchmark:
+
+```bash
+.venv/bin/python -m agentic.app.cli real-bench
+```
+
+Print recent experience events:
+
+```bash
+.venv/bin/python -m agentic.app.cli experience-list --limit 20
 ```
 
 List configured model candidates:
@@ -382,11 +426,12 @@ Latest default verification:
 
 ```bash
 .venv/bin/python -m unittest discover -s evals
-# 153 tests passing, 2 skipped
+# 160 tests passing, 2 skipped
 
 .venv/bin/python -m agentic.app.cli config-check
 # passing
 
-.venv/bin/python -m agentic.app.cli ops-smoke --include-model --model master-gemma-q4 --model-max-tokens 256
-# passing
+.venv/bin/python -m agentic.app.cli real-bench
+# real benchmark executes; current overall result is not fully passing because
+# Gmail credentials, ticket URL/live browser adapter, Reddit access, and model output are unresolved.
 ```

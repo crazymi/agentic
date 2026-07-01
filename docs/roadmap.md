@@ -55,6 +55,7 @@ These are framework-level modules, not individual user skills.
 | Resource Store | External documents and assets referenced by agents | Obsidian vault, Gmail messages, web pages, screenshots |
 | Policy | Rules for capability limits, credentials, and approvals | which tools need approval, which jobs may run unattended |
 | Trace/Replay | Structured event log for debugging and evals | reproduce a failed browser macro or newsletter analysis |
+| Experience Loop | Convert attempts, failures, bottlenecks, and lessons into reusable state | requirement smoke, tooling backlog, skill proposals, roadmap updates |
 
 OpenClaw separates concepts such as skills, plugins, and automation. MCP standardizes external capability exposure through servers and capabilities such as tools, resources, prompts, lifecycle, and discovery. This harness borrows those shapes but keeps the implementation local, small, and personal.
 
@@ -64,6 +65,43 @@ References:
 - OpenClaw Plugin: https://docs.openclaw.ai/tools/plugin
 - OpenClaw Automation: https://docs.openclaw.ai/automation
 - Model Context Protocol architecture: https://modelcontextprotocol.io/docs/concepts/architecture
+
+## Cross-Cutting: Experience Loop
+
+Goal: prevent agent work from remaining one-off by recording what was tried, what evidence was observed, where the harness got stuck, and which reusable primitive should be added next.
+
+Scope:
+
+- structured `ExperienceEvent` JSONL log
+- script-only requirement probes
+- bottleneck extraction
+- conversion of capability gaps into tooling backlog
+- retrieval command for recent experience
+- docs/work-log updates after substantive work
+
+Modules:
+
+- `agentic/experience/`
+- `agentic/tooling/`
+- `docs/work_log.md`
+- `docs/experience_loop.md`
+- `docs/requirements_smoke_status.md`
+
+Acceptance criteria:
+
+- user-shaped requirements can be smoke-tested without UI
+- each probe reports current level: completed, blocked by approval, blocked by tooling, or needs input
+- smoke results are appended to `traces/experience.jsonl`
+- repeated bottlenecks are visible as durable data, not chat-only memory
+- default tests do not require live network, real browser, live ntfy, Gmail, or GPU
+- real user-requirement benchmarks use `real-bench` and must not count fake, dummy, synthetic, fixture, or preapproved shortcuts as completed capability
+
+Evaluation:
+
+- `.venv/bin/python -m agentic.app.cli requirements-smoke`
+- `.venv/bin/python -m agentic.app.cli real-bench`
+- `.venv/bin/python -m agentic.app.cli experience-list --limit 20`
+- evals covering experience store and requirement smoke
 
 ## Milestone 2: Channel And Approval Core
 
@@ -170,9 +208,10 @@ Acceptance criteria:
 
 Evaluation:
 
-- local connector fixture test: tools/resources/prompts discovery
-- local MCP stdio fixture test: call one tool through adapter
+- connector discovery test: tools/resources/prompts discovery
+- local MCP stdio protocol test: call one tool through adapter
 - policy test: connector tool requiring approval cannot bypass approval
+- real-bench follow-up: live connector paths report credentials, network, or tooling blockers explicitly
 
 ## Milestone 5: Skill System
 
@@ -185,7 +224,7 @@ Scope:
 - skill routing metadata
 - skill prompt injection
 - required tools/connectors declaration
-- skill eval fixtures
+- skill eval scenarios
 - user-editable local skill directory
 
 Modules:
@@ -200,7 +239,7 @@ Acceptance criteria:
 - a skill can declare required tools/connectors
 - runtime can load skill instructions into an agent turn
 - missing required capability produces a clear blocker
-- skill behavior can be evaluated with fixtures
+- skill behavior can be evaluated with real or clearly bounded developer scenarios
 
 Evaluation:
 
@@ -345,7 +384,7 @@ Acceptance criteria:
 
 Evaluation:
 
-- fixture eval per probe
+- real-bench coverage per user-shaped probe
 - full local-source end-to-end eval from request shape to approved run
 - regression check that existing Phase 1, M2, M3, M4, M5, and M6 behavior still works
 
@@ -419,13 +458,12 @@ Acceptance criteria:
 - browser observe/action steps save screenshots and DOM snapshots as artifacts
 - booking/payment/submit actions require fresh explicit approval
 - sold-out or unavailable states create durable retry attempts with rate limits
-- default tests use local fixture pages and never perform live purchase or payment
+- real benchmark reports missing URL, missing live adapter, or live browser progress without fabricating state
 
 Evaluation:
 
-- local fixture test: login-required page pauses and requests user input
-- local fixture test: sold-out page schedules retry
-- local fixture test: available page reaches approval-required before submit
+- real-bench ticket probe: missing URL requests user input
+- real-bench ticket probe: provided URL is blocked until live adapter exists
 - restart test: waiting and retrying workflow survives process restart
 - policy test: unapproved submit/payment is blocked
 

@@ -193,6 +193,25 @@ The first implementation should be simple:
 
 Do not start with a full mobile app. Do not start with a complex chat platform integration unless local web plus ntfy fails.
 
+## Current Smoke Coverage
+
+The project now has a script-only requirement smoke command:
+
+```bash
+.venv/bin/python -m agentic.app.cli requirements-smoke
+```
+
+Current coverage:
+
+- WSJ newsletter analysis: local-source workflow completes; production Gmail OAuth/WSJ ingestion remains missing.
+- Social trend crawler: local feed workflow completes; production Reddit/DCInside collectors remain missing.
+- Idea memory synthesis: local idea source workflow completes; workflow interpreter does not yet write/link durable memories.
+- Harness self-improvement: repo source workflow completes; patch/test execution is not yet modeled as approval-gated coding actions.
+- Browser ticket transaction: planning and tooling backlog work; live browser observe/action adapter, approval-resume, and retry state remain missing.
+- Mobile approval notification: correctly stops at approval for ntfy; live external delivery depends on policy/environment.
+
+Each run appends structured experience to `traces/experience.jsonl` so bottlenecks and lessons survive beyond the chat turn.
+
 ## Open Questions
 
 These should be decided before implementation reaches each related milestone:

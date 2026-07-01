@@ -16,6 +16,10 @@ This log records substantive project work. Keep the table of contents updated wh
 - [2026-07-01 14:28 KST - DeepResearch Ticket Booking Probe](#2026-07-01-1428-kst---deepresearch-ticket-booking-probe)
 - [2026-07-01 14:39 KST - M11 Browser Transaction Runtime Design](#2026-07-01-1439-kst---m11-browser-transaction-runtime-design)
 - [2026-07-01 15:10 KST - M11 Planning And Tooling Backbone](#2026-07-01-1510-kst---m11-planning-and-tooling-backbone)
+- [2026-07-01 18:02 KST - Experience Loop And Requirement Smoke](#2026-07-01-1802-kst---experience-loop-and-requirement-smoke)
+- [2026-07-01 18:19 KST - Autonomy Benchmark Review](#2026-07-01-1819-kst---autonomy-benchmark-review)
+- [2026-07-01 18:30 KST - M11 Finish-Line Fixture Runtime](#2026-07-01-1830-kst---m11-finish-line-fixture-runtime)
+- [2026-07-01 18:45 KST - Real Benchmark And Fake Path Removal](#2026-07-01-1845-kst---real-benchmark-and-fake-path-removal)
 
 ## 2026-07-01 11:40 KST - M7 Workflow Kernel Implementation
 
@@ -441,3 +445,156 @@ Lessons learned:
 - The missing layer was not another connector; it was a durable translation layer from capability gaps to buildable tooling backlog.
 - Planning sessions are the core bridge between blurry user intent and executable workflow specs.
 - For 24/7 automation, the harness needs to remember both workflow state and tooling debt. Otherwise the agent cannot improve its environment over time.
+
+## 2026-07-01 18:02 KST - Experience Loop And Requirement Smoke
+
+Summary:
+
+- Added a structured experience loop and script-only requirement smoke runner so user-shaped automation probes continuously produce reusable lessons and bottleneck data.
+
+Changed areas:
+
+- Added `agentic/experience/` with experience events, JSONL store, requirement probes, and requirement smoke runner.
+- Added CLI commands:
+  - `requirements-smoke`
+  - `experience-list`
+- Added `evals/test_experience_loop.py`.
+- Updated `AGENTS.md` with Experience Loop operating rules.
+- Added `docs/experience_loop.md`.
+- Added `docs/requirements_smoke_status.md`.
+- Updated README, roadmap, and user requirements docs.
+
+Verification:
+
+- `.venv/bin/python -m unittest evals.test_experience_loop`
+- `.venv/bin/python -m agentic.app.cli requirements-smoke --state-dir traces/state/requirements_smoke_rerun --experience-path traces/experience.jsonl`
+- `.venv/bin/python -m unittest discover -s evals`
+- `.venv/bin/python -m agentic.app.cli config-check`
+- `.venv/bin/python -m agentic.app.cli experience-list --limit 3`
+
+Roadmap impact:
+
+- Added Experience Loop as a cross-cutting backbone.
+- User requirement probes are now executable without UI and append structured events to `traces/experience.jsonl`.
+- The harness can now accumulate evidence about what works, what is blocked by approval, and what missing tooling must be built next.
+
+Next step:
+
+- Implement M11 runtime execution slice: executable `ASK_USER`, workflow pause/resume, approval-resume, local browser fixture adapter, browser observation artifacts, and retry state.
+
+Lessons learned:
+
+- A failing smoke is productive when it records structured evidence. The first mobile approval probe exposed a source-routing gap and was immediately fixed.
+- Completed local-source probes still need production bottlenecks recorded; otherwise local fixtures can make the harness look more ready than it is.
+- Experience must be queryable by scripts, not just readable in narrative docs, so future agents can retrieve recent lessons before repeating work.
+
+## 2026-07-01 18:19 KST - Autonomy Benchmark Review
+
+Summary:
+
+- Evaluated the current harness autonomy level and mapped common autonomous-agent benchmarks to the project roadmap.
+
+Changed areas:
+
+- Added `docs/autonomy_benchmark_review.md`.
+
+Verification:
+
+- Research/documentation task only.
+- Reviewed current requirements smoke and M11 status docs.
+- Browsed public benchmark references for WebArena, GAIA, OSWorld, WorkArena/BrowserGym, AgentBench, τ-bench, Mind2Web, SWE-bench, MCP-Bench, and related benchmark families.
+
+Roadmap impact:
+
+- Current harness is assessed as L2.2 / L5: strong workflow/backbone maturity, low real-world execution autonomy.
+- Public benchmark readiness is currently near-zero for browser/OS/coding benchmarks until live adapters and action runtimes exist.
+- Internal requirement smoke should remain the primary benchmark until M11 runtime execution is implemented.
+
+Next step:
+
+- Implement M11 runtime execution slice and add a browser fixture benchmark before attempting WebArena/Mind2Web-style evaluation.
+
+Lessons learned:
+
+- The project is ahead in orchestration and experience capture, but behind in grounded action.
+- Public agent benchmarks mostly evaluate execution in real/simulated environments; our current system mostly evaluates representation and gating.
+- The right near-term benchmark is not WebArena yet; it is a local fixture benchmark that exercises pause/resume, approval, browser observation, and retry state.
+
+## 2026-07-01 18:30 KST - M11 Finish-Line Fixture Runtime
+
+Superseded by the 2026-07-01 18:45 KST real-only correction below.
+
+Summary:
+
+- Implemented the first M11 finish-line execution slice so a browser transaction workflow can reach a completed report through local HTML fixtures.
+
+Changed areas:
+
+- Added `agentic/browser/` with `BrowserObservation`, `BrowserActionResult`, and `LocalFixtureBrowserAdapter`.
+- Updated `CapabilityPlanner` so `connector:browser_fixture` is allowed only for local regression execution while live `connector:browser` remains missing.
+- Updated `WorkflowInterpreter` so fixture/preapproved paths can execute `ASK_USER`, `BROWSER_OBSERVE`, `BROWSER_ACTION`, `APPROVAL`, and `REPORT`.
+- Added checked-in browser fixtures for available, sold-out, and login-required states.
+- Added `evals/test_milestone11_runtime_execution.py`.
+- Updated `AGENTS.md`, README, roadmap, M11 status, autonomy benchmark review, and experience-loop docs.
+
+Verification:
+
+- `.venv/bin/python -m unittest evals.test_milestone11_runtime_execution`
+- `.venv/bin/python -m unittest discover -s evals`
+- `.venv/bin/python -m agentic.app.cli config-check`
+- `.venv/bin/python -m agentic.app.cli requirements-smoke`
+
+Roadmap impact:
+
+- M11 now has a script-only finish-line browser transaction benchmark for the safe local fixture path.
+- Live browser automation remains intentionally blocked until a real adapter, user resume, approval-resume, and retry-state runtime are implemented.
+- Autonomy score updated from L2.2 to L2.6 because execution can now complete in a local browser-contract environment, but not on live sites.
+
+Next step:
+
+- Implement M11 resume/retry runtime: pause/resume for user login, approval-resumable workflow runs, retry state for sold-out/not-open states, and then a real browser adapter behind the same contract.
+
+Lessons learned:
+
+- "End-to-end" must mean terminal useful state, not just workflow representation. The new fixture benchmark forces that distinction.
+- A local fixture adapter is useful only if live paths stay blocked and explicit; otherwise it becomes fake product capability.
+- Experience-loop rules apply to both Codex and Agentic. Codex should inspect recent experience before similar work, and Agentic should turn blocked runs into structured state.
+
+## 2026-07-01 18:45 KST - Real Benchmark And Fake Path Removal
+
+Summary:
+
+- Removed fixture/preapproved browser execution from product paths and added a real user-requirement benchmark that actually attempts live/local capabilities.
+
+Changed areas:
+
+- Added `agentic/benchmarks/` with `real-bench` probes for memory, repo inspection, Gmail/WSJ, ticket browser readiness, ntfy, Reddit, DCInside, and local GGUF model execution.
+- Removed `LocalFixtureBrowserAdapter` and browser fixture eval files from product/eval path.
+- Removed `preapproved` approval bypass and `connector:browser_fixture` capability admission.
+- Replaced product Gmail fixture connector with a real `GmailImapConnector`.
+- Updated `AGENTS.md`, README, roadmap, M11 status, autonomy benchmark review, experience-loop docs, and added `docs/real_benchmark.md` plus `docs/real_benchmark_status.md`.
+
+Verification:
+
+- `.venv/bin/python -m py_compile agentic/benchmarks/models.py agentic/benchmarks/real.py agentic/connectors/gmail/imap.py agentic/app/cli.py agentic/workflow_kernel/interpreter.py agentic/workflow_kernel/capabilities.py agentic/workflow_kernel/designer.py`
+- `.venv/bin/python -m agentic.app.cli config-check`
+- `CODEX_HOME=/mnt/c/Users/TAZO/.codex .venv/bin/python -m agentic.app.cli real-bench --model master-gemma-iq2 --model-max-tokens 12`
+- `CODEX_HOME=/mnt/c/Users/TAZO/.codex .venv/bin/python -m agentic.app.cli real-bench --skip-network --skip-ntfy --model master-gemma-q4 --model-max-tokens 32`
+- `.venv/bin/python -m agentic.app.cli real-bench --skip-network --skip-ntfy --skip-model --no-persist-experience`
+- `.venv/bin/python -m unittest discover -s evals` (`Ran 160 tests`, `OK (skipped=2)`)
+
+Roadmap impact:
+
+- Internal benchmark priority moved from fixture/representation checks to real execution checks.
+- Autonomy assessment corrected to L2.3 / L5.
+- Current real blockers are Gmail credentials, official ticket URL, live browser adapter, Reddit access strategy, and local model empty output.
+
+Next step:
+
+- Fix the local GGUF runner/template path so the model produces non-empty output, then implement real browser adapter + approval/input resume.
+
+Lessons learned:
+
+- A process that launches and returns code 0 is not enough; empty model output is not useful autonomy.
+- ntfy and DCInside crawling work on real paths today, while Reddit needs a compliant connector/API path.
+- Credential/input/tooling blockers should be first-class benchmark outcomes, not reasons to substitute fake data.
