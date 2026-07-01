@@ -18,6 +18,7 @@ from agentic.workflow_kernel.models import (
     WorkflowStep,
 )
 from agentic.workflow_kernel.store import WorkflowStore
+from agentic.workflow_kernel.planning_session import PlanningSessionStore
 from agentic.workflow_kernel.interpreter import (
     WorkflowBuilder,
     WorkflowExecutionResult,
@@ -36,6 +37,7 @@ __all__ = [
     "WorkflowStatus",
     "WorkflowStep",
     "WorkflowStore",
+    "PlanningSessionStore",
     "WorkflowBuilder",
     "WorkflowExecutionResult",
     "WorkflowInterpreter",

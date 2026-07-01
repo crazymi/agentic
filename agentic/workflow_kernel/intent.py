@@ -43,6 +43,15 @@ class IntentRouter:
                     extracted=extracted,
                 )
             )
+        if self._looks_like_browser_transaction(lowered):
+            return self._record(
+                RequestIntent(
+                    intent_type=IntentType.BROWSER_TRANSACTION,
+                    confidence=0.88,
+                    reason="login-gated or consequential browser transaction requested",
+                    extracted=extracted,
+                )
+            )
         if self._looks_like_scheduled(lowered):
             return self._record(
                 RequestIntent(
@@ -152,6 +161,37 @@ class IntentRouter:
                 "ticket",
                 "티켓",
             )
+        )
+
+    @staticmethod
+    def _looks_like_browser_transaction(text: str) -> bool:
+        transaction_tokens = (
+            "예매",
+            "예약",
+            "구매",
+            "결제",
+            "티켓팅",
+            "book",
+            "booking",
+            "reserve",
+            "purchase",
+            "checkout",
+        )
+        browser_tokens = (
+            "로그인",
+            "사이트",
+            "브라우저",
+            "페이지",
+            "ticket",
+            "티켓",
+            "표",
+            "좌석",
+            "자리",
+            "폼",
+            "submit",
+        )
+        return any(token in text for token in transaction_tokens) and any(
+            token in text for token in browser_tokens
         )
 
     @staticmethod

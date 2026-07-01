@@ -30,6 +30,22 @@ class ResponseSanitizerTests(unittest.TestCase):
             '{"tool":"add","arguments":{"a":1,"b":1}}',
         )
 
+    def test_explicit_direct_answer_is_extracted_when_final_channel_is_missing(self) -> None:
+        raw = "\n".join(
+            [
+                "<|channel>thought",
+                '*   Direct answer: "한국의 수도는 서울입니다."',
+                "*   extra hidden notes should not leak",
+            ]
+        )
+
+        self.assertEqual(sanitize_model_output(raw), "한국의 수도는 서울입니다.")
+
+    def test_internal_text_without_explicit_answer_is_hidden(self) -> None:
+        raw = "<|channel>thought\nprivate reasoning only"
+
+        self.assertEqual(sanitize_model_output(raw), "")
+
 
 if __name__ == "__main__":
     unittest.main()

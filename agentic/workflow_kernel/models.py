@@ -30,6 +30,7 @@ class IntentType(StrEnum):
     WORKFLOW_DESIGN = "workflow_design"
     SCHEDULED_WORKFLOW = "scheduled_workflow"
     WATCHER_WORKFLOW = "watcher_workflow"
+    BROWSER_TRANSACTION = "browser_transaction"
     CODING_WORKFLOW = "coding_workflow"
     UNKNOWN = "unknown"
 
@@ -64,6 +65,8 @@ class StepType(StrEnum):
     AGGREGATE = "aggregate"
     ASK_USER = "ask_user"
     APPROVAL = "approval"
+    BROWSER_OBSERVE = "browser_observe"
+    BROWSER_ACTION = "browser_action"
     CALL_TOOL = "call_tool"
     CALL_CONNECTOR = "call_connector"
     RUN_SCRIPT = "run_script"
@@ -371,6 +374,7 @@ class WorkflowDesignSession:
     extracted_slots: dict[str, Any] = field(default_factory=dict)
     missing_slots: list[str] = field(default_factory=list)
     question: str | None = None
+    answers: list[dict[str, Any]] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     proposed_workflow_id: str | None = None
     created_at: str = field(default_factory=utc_now)
@@ -385,8 +389,26 @@ class WorkflowDesignSession:
             "extracted_slots": self.extracted_slots,
             "missing_slots": self.missing_slots,
             "question": self.question,
+            "answers": self.answers,
             "assumptions": self.assumptions,
             "proposed_workflow_id": self.proposed_workflow_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> "WorkflowDesignSession":
+        return cls(
+            session_id=str(record["session_id"]),
+            status=str(record.get("status") or "designing"),
+            user_request=str(record["user_request"]),
+            intent=RequestIntent(**dict(record["intent"])),
+            extracted_slots=dict(record.get("extracted_slots") or {}),
+            missing_slots=list(record.get("missing_slots") or []),
+            question=record.get("question"),
+            answers=list(record.get("answers") or []),
+            assumptions=list(record.get("assumptions") or []),
+            proposed_workflow_id=record.get("proposed_workflow_id"),
+            created_at=str(record.get("created_at") or utc_now()),
+            updated_at=str(record.get("updated_at") or utc_now()),
+        )

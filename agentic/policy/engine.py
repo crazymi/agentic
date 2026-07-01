@@ -4,11 +4,18 @@ from agentic.policy.rules import CapabilityRequest, PolicyAction, PolicyDecision
 
 
 APPROVAL_REQUIRED_CAPABILITIES = {
+    "artifact:script",
+    "channel:ntfy",
+    "connector:browser_page",
+    "connector:community_web",
+    "connector:reddit",
+    "connector:web_page",
+    "tool:booking",
+    "tool:browser_submit",
+    "tool:email_send",
     "tool:shell",
     "tool:file_write",
-    "tool:browser_submit",
     "tool:payment",
-    "tool:email_send",
 }
 
 DENIED_CAPABILITIES = {
@@ -21,19 +28,22 @@ class PolicyEngine:
     def decide(self, request: CapabilityRequest) -> PolicyDecision:
         if request.capability == "tool:add":
             return PolicyDecision(PolicyAction.ALLOW, "safe local arithmetic tool")
-        if request.capability.startswith("connector:fake:tool:"):
-            return PolicyDecision(PolicyAction.ALLOW, "safe fake connector tool")
         if request.capability in DENIED_CAPABILITIES:
             return PolicyDecision(PolicyAction.DENY, "capability is denied")
+        if request.capability in APPROVAL_REQUIRED_CAPABILITIES:
+            return PolicyDecision(
+                PolicyAction.REQUIRE_APPROVAL,
+                "capability requires user approval",
+            )
         if request.capability.startswith("connector:"):
             return PolicyDecision(
                 PolicyAction.REQUIRE_APPROVAL,
                 "connector capability requires approval",
             )
-        if request.capability in APPROVAL_REQUIRED_CAPABILITIES:
+        if request.capability.startswith("artifact:"):
             return PolicyDecision(
                 PolicyAction.REQUIRE_APPROVAL,
-                "capability requires user approval",
+                "artifact capability requires approval",
             )
         if request.capability.startswith("tool:"):
             return PolicyDecision(

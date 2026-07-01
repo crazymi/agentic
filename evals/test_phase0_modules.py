@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,7 +21,7 @@ from agentic.traces.logger import TraceLogger
 
 class Phase0ModuleTests(unittest.TestCase):
     def test_master_model_generates_text(self) -> None:
-        provider = LocalGGUFProvider(ModelConfig.fake("master"))
+        provider = LocalGGUFProvider(_echo_model("master"))
         agent = MasterAgent(provider=provider, prompt_builder=PromptBuilder())
 
         response = agent.generate("hello")
@@ -29,7 +30,7 @@ class Phase0ModuleTests(unittest.TestCase):
         self.assertIn("hello", response.text)
 
     def test_subagent_model_generates_text(self) -> None:
-        provider = LocalGGUFProvider(ModelConfig.fake("subagent"))
+        provider = LocalGGUFProvider(_echo_model("subagent"))
         tools = ToolRegistry.with_defaults()
         agent = SubAgent(
             provider=provider,
@@ -126,6 +127,22 @@ class Phase0ModuleTests(unittest.TestCase):
             "tool_result",
         ])
         self.assertEqual(json.loads(lines[2])["payload"]["result"], 2)
+
+
+def _echo_model(role: str) -> ModelConfig:
+    script = (
+        "import sys; "
+        "prompt=sys.stdin.read(); "
+        "print(sys.argv[1] + ' response: ' + prompt[:10000])"
+    )
+    return ModelConfig(
+        model_id=f"local-echo-{role}",
+        name=f"local-echo-{role}",
+        role=role,
+        executable=sys.executable,
+        command_template=(sys.executable, "-c", script, role),
+        timeout_s=10.0,
+    )
 
 
 if __name__ == "__main__":

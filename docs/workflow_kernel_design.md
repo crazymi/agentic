@@ -92,7 +92,7 @@ Minimum v1 fields:
 - `capabilities`: required tools/connectors/MCP/scripts and risk levels
 - `policy`: approval requirements, rate limits, sandbox, retention
 - `outputs`: resources, memory writes, artifacts, reports, notifications
-- `evals`: fake fixtures or dry-run checks required before activation
+- `evals`: real local fixtures, checked-in source files, or dry-run checks required before activation
 
 Workflow specs should be JSON-compatible and persisted in SQLite. A later version can add YAML import/export, but v1 should keep the Python model simple.
 
@@ -162,4 +162,4 @@ The first kernel milestone is not complete until these can be represented as wor
 - "Watch this site and notify me when a target condition appears."
 - "Inspect this repo, propose a scoped fix, patch, test, and report."
 
-The implementation may use fake connectors/scripts for these probes. The point is spec expressiveness and lifecycle correctness.
+The implementation uses checked-in local sources or current repository state for these probes. The point is spec expressiveness and lifecycle correctness without pretending that unavailable external integrations already exist.

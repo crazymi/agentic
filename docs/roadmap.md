@@ -19,7 +19,7 @@ The harness should become useful for four concrete use cases:
 
 Completed legacy milestones are archived in `docs/legacy/`.
 
-- Phase 0 completed: module-level proof of the local GGUF provider, prompt builder, tool parser, dummy tool, task object, trace logger, and evals.
+- Phase 0 completed: module-level proof of the local GGUF provider, prompt builder, tool parser, local arithmetic tool, task object, trace logger, and evals.
 - Phase 1 completed: minimal full loop from user input to master delegation, subagent tool call, tool result, trace, and final response.
 
 The active roadmap starts after this baseline.
@@ -170,8 +170,8 @@ Acceptance criteria:
 
 Evaluation:
 
-- fake connector test: tools/resources/prompts discovery
-- fake MCP server test: call one tool through adapter
+- local connector fixture test: tools/resources/prompts discovery
+- local MCP stdio fixture test: call one tool through adapter
 - policy test: connector tool requiring approval cannot bypass approval
 
 ## Milestone 5: Skill System
@@ -271,14 +271,14 @@ Acceptance criteria:
 - harness can turn a vague recurring request into a workflow design session
 - designer asks one missing-info question at a time
 - proposed workflow can be approved, persisted, activated, paused, and retired
-- approved workflow can run through fake collect/analyze/report steps
+- approved workflow can run through real local-source collect/analyze/report steps
 - sensitive capabilities require deterministic policy and approval
 
 Evaluation:
 
 - intent router tests across example request classes
 - workflow lifecycle transition tests
-- fake workflow execution test
+- local-source workflow execution test
 - policy/admission tests for generated scripts and external actions
 - probe tests proving newsletter, social trend, idea synthesis, browser watcher, and coding requests can be represented as workflow specs
 
@@ -319,7 +319,7 @@ Acceptance criteria:
 
 Evaluation:
 
-- fake source connector tests
+- local source connector tests
 - artifact admission tests
 - credential reference tests
 - policy tests for browser submit, email send, file write, shell, booking, payment, and generated script execution
@@ -339,14 +339,14 @@ Probe scenarios:
 Acceptance criteria:
 
 - each probe is represented as a `WorkflowSpec`
-- at least one run per probe can execute with fake/default-safe sources
+- at least one run per probe can execute with checked-in local sources or current repository state
 - no probe adds a bespoke daemon, scheduler, or top-level runtime path
 - reports and artifacts are linked to workflow runs and traces
 
 Evaluation:
 
 - fixture eval per probe
-- full fake end-to-end eval from user request to workflow proposal to approved run
+- full local-source end-to-end eval from request shape to approved run
 - regression check that existing Phase 1, M2, M3, M4, M5, and M6 behavior still works
 
 ## Milestone 10: 24/7 Hardening
@@ -383,6 +383,55 @@ Evaluation:
 - restart test: active task recovered
 - pressure test: model/resource manager avoids concurrent VRAM overload
 - backup test: memory/task state can be exported and restored
+
+## Milestone 11: Interactive Browser Transaction Runtime
+
+Goal: make high-risk, login-gated browser workflows possible without turning any one site into a bespoke automation path.
+
+Validation probe:
+
+- "MSI 2026 결승전 표 예매해줘"
+
+Scope:
+
+- durable planning sessions for blurry user requests and follow-up answers
+- browser transaction intent classification
+- browser observe/action capability model
+- live browser adapter boundary
+- user input checkpoints for login, captcha/manual verification, and missing slots
+- approval-resumable workflow runs
+- retry/watch mode for not-yet-open, sold-out, queue, and transient failure states
+
+Modules:
+
+- `agentic/workflow_kernel/planning_session.py`
+- `agentic/browser/`
+- `agentic/workflow_kernel/interpreter.py`
+- `agentic/scheduler/`
+- `agentic/app/server.py`
+
+Acceptance criteria:
+
+- vague booking request opens a planning session instead of falling through the Phase 1 loop
+- designer asks one missing slot at a time and stores follow-up answers
+- official source discovery produces a reviewed source/platform candidate
+- workflow can pause at `login_required` and resume after the user confirms login
+- browser observe/action steps save screenshots and DOM snapshots as artifacts
+- booking/payment/submit actions require fresh explicit approval
+- sold-out or unavailable states create durable retry attempts with rate limits
+- default tests use local fixture pages and never perform live purchase or payment
+
+Evaluation:
+
+- local fixture test: login-required page pauses and requests user input
+- local fixture test: sold-out page schedules retry
+- local fixture test: available page reaches approval-required before submit
+- restart test: waiting and retrying workflow survives process restart
+- policy test: unapproved submit/payment is blocked
+
+Plan:
+
+- See `docs/milestone11_browser_transaction_runtime_plan.md`.
 
 ## Non-Goals Until Later
 

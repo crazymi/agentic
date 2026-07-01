@@ -63,6 +63,20 @@ def _strip_internal_channels(text: str) -> str:
     if final_markers:
         start = final_markers[-1].end()
         return text[start:]
+    return _extract_explicit_answer_from_internal_text(text)
+
+
+def _extract_explicit_answer_from_internal_text(text: str) -> str:
+    patterns = [
+        r"Direct answer:\s*\"([^\"]+)\"",
+        r"Final answer:\s*\"([^\"]+)\"",
+        r"Answer:\s*\"([^\"]+)\"",
+        r"답변:\s*\"([^\"]+)\"",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
     return ""
 
 
@@ -71,5 +85,16 @@ def _looks_like_partial_decision(text: str) -> bool:
     if not stripped:
         return False
     if stripped.startswith('{"decision"') or stripped.startswith('{"action"'):
+        try:
+            data = json.loads(stripped)
+        except json.JSONDecodeError:
+            return True
+        if not isinstance(data, dict):
+            return True
+        action = data.get("action", data.get("decision"))
+        if action == "answer" and isinstance(data.get("answer"), str):
+            return False
+        if action == "delegate" and isinstance(data.get("task"), str):
+            return False
         return True
     return "<|channel>thought" in stripped or "<|channel>analysis" in stripped

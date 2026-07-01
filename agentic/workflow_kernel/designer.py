@@ -11,10 +11,20 @@ from agentic.workflow_kernel.models import (
     WorkflowSpec,
     WorkflowStatus,
     WorkflowStep,
+    utc_now,
 )
 
 
 REQUIRED_DESIGN_SLOTS = ("goal", "source", "cadence", "output")
+BROWSER_TRANSACTION_SLOTS = (
+    "goal",
+    "source",
+    "target",
+    "constraints",
+    "retry_policy",
+    "approval_boundary",
+    "output",
+)
 
 
 @dataclass(frozen=True)
@@ -51,7 +61,7 @@ class WorkflowDesigner:
     def design(self, user_request: str) -> WorkflowProposal:
         intent = self.router.classify(user_request)
         slots = self._extract_slots(user_request, intent.intent_type)
-        missing = [slot for slot in REQUIRED_DESIGN_SLOTS if not slots.get(slot)]
+        missing = [slot for slot in self._required_slots(intent.intent_type) if not slots.get(slot)]
         question = self._question_for(missing[0]) if missing else None
         status = "needs_input" if question else "proposed"
         session = WorkflowDesignSession(
@@ -73,12 +83,79 @@ class WorkflowDesigner:
                 extracted_slots=session.extracted_slots,
                 missing_slots=[],
                 question=None,
+                answers=session.answers,
                 assumptions=session.assumptions,
                 proposed_workflow_id=spec.workflow_id,
                 created_at=session.created_at,
                 updated_at=session.updated_at,
             )
         return WorkflowProposal(session=session, spec=spec)
+
+    def continue_design(self, session: WorkflowDesignSession, answer: str) -> WorkflowProposal:
+        if not session.missing_slots:
+            return WorkflowProposal(session=session, spec=None)
+        slot = session.missing_slots[0]
+        slots = dict(session.extracted_slots)
+        slots[slot] = self._normalize_slot_answer(slot, answer)
+        missing = [item for item in self._required_slots(session.intent.intent_type) if not slots.get(item)]
+        question = self._question_for(missing[0]) if missing else None
+        answers = [
+            *session.answers,
+            {"slot": slot, "answer": answer.strip(), "created_at": utc_now()},
+        ]
+        updated = WorkflowDesignSession(
+            session_id=session.session_id,
+            user_request=session.user_request,
+            intent=session.intent,
+            status="needs_input" if question else "proposed",
+            extracted_slots=slots,
+            missing_slots=missing,
+            question=question,
+            answers=answers,
+            assumptions=self._assumptions(slots, missing),
+            proposed_workflow_id=session.proposed_workflow_id,
+            created_at=session.created_at,
+            updated_at=utc_now(),
+        )
+        spec = (
+            self._build_spec(session.user_request, session.intent.intent_type, slots, updated.assumptions)
+            if not missing
+            else None
+        )
+        if spec is None:
+            return WorkflowProposal(session=updated, spec=None)
+        proposed = WorkflowDesignSession(
+            session_id=updated.session_id,
+            user_request=updated.user_request,
+            intent=updated.intent,
+            status="proposed",
+            extracted_slots=updated.extracted_slots,
+            missing_slots=[],
+            question=None,
+            answers=updated.answers,
+            assumptions=updated.assumptions,
+            proposed_workflow_id=spec.workflow_id,
+            created_at=updated.created_at,
+            updated_at=updated.updated_at,
+        )
+        return WorkflowProposal(session=proposed, spec=spec)
+
+    @staticmethod
+    def _normalize_slot_answer(slot: str, answer: str) -> str:
+        cleaned = answer.strip()
+        if not cleaned:
+            return ""
+        if slot == "constraints":
+            return cleaned
+        if slot == "retry_policy":
+            lowered = cleaned.lower()
+            if "1분" in lowered or "1 minute" in lowered:
+                return "interval:60s"
+            if "5분" in lowered or "5 minute" in lowered:
+                return "interval:300s"
+            if "변화" in lowered or "state change" in lowered:
+                return "state_change_only"
+        return cleaned
 
     def _extract_slots(self, text: str, intent_type: IntentType) -> dict[str, Any]:
         lowered = text.lower()
@@ -89,7 +166,17 @@ class WorkflowDesigner:
         slots["output"] = self._output_from(lowered)
         slots["alert_path"] = "ntfy" if any(token in lowered for token in ("알림", "알려", "notify", "ntfy")) else "web"
         slots["risk"] = self._risk_from(lowered)
+        slots["target"] = self._target_from(text, lowered, intent_type)
+        slots["constraints"] = self._constraints_from(lowered)
+        slots["retry_policy"] = self._retry_policy_from(lowered, intent_type)
+        slots["approval_boundary"] = self._approval_boundary_from(lowered, intent_type)
         return slots
+
+    @staticmethod
+    def _required_slots(intent_type: IntentType) -> tuple[str, ...]:
+        if intent_type == IntentType.BROWSER_TRANSACTION:
+            return BROWSER_TRANSACTION_SLOTS
+        return REQUIRED_DESIGN_SLOTS
 
     @staticmethod
     def _source_from(text: str) -> str:
@@ -99,13 +186,43 @@ class WorkflowDesigner:
             return "reddit"
         if any(token in text for token in ("주식갤", "dcinside", "디시", "커뮤니티")):
             return "community_web"
-        if any(token in text for token in ("사이트", "url", "http", "브라우저", "ticket", "티켓")):
+        if any(token in text for token in ("사이트", "url", "http", "브라우저", "ticket", "티켓", "표")):
             return "web_page"
         if any(token in text for token in ("repo", "repository", "리포", "코드")):
             return "repo"
         if any(token in text for token in ("idea", "아이디어", "메모", "노트")):
             return "channel"
         return ""
+
+    @staticmethod
+    def _target_from(text: str, lowered: str, intent_type: IntentType) -> str:
+        if intent_type != IntentType.BROWSER_TRANSACTION:
+            return ""
+        if len(text.strip()) <= 8:
+            return ""
+        return text.strip()
+
+    @staticmethod
+    def _constraints_from(text: str) -> str:
+        if any(token in text for token in ("1장", "2장", "3장", "4장", "예산", "가격", "좌석", "자리", "section")):
+            return "provided"
+        return ""
+
+    @staticmethod
+    def _retry_policy_from(text: str, intent_type: IntentType) -> str:
+        if intent_type != IntentType.BROWSER_TRANSACTION:
+            return ""
+        if any(token in text for token in ("24/7", "계속", "재시도", "빈자리", "나면", "뜨면", "매크로")):
+            return "watch_with_backoff"
+        return "manual_then_watch"
+
+    @staticmethod
+    def _approval_boundary_from(text: str, intent_type: IntentType) -> str:
+        if intent_type != IntentType.BROWSER_TRANSACTION:
+            return ""
+        if any(token in text for token in ("승인", "확인", "물어", "결제 전", "예매 전")):
+            return "fresh_user_approval_before_submit"
+        return "fresh_user_approval_before_submit"
 
     @staticmethod
     def _cadence_from(text: str, intent_type: IntentType) -> str:
@@ -150,6 +267,10 @@ class WorkflowDesigner:
             "source": "어떤 데이터 소스를 사용할까요? 예: Gmail, Reddit, 특정 사이트 URL, Obsidian, repo",
             "cadence": "얼마나 자주 실행할까요? 예: 1분마다, 30분마다, 매일 오전",
             "output": "결과는 어떤 형태로 받을까요? 예: 웹 보고서, ntfy 알림, 메일 초안, 메모 저장",
+            "target": "정확히 어떤 대상/세션을 처리할까요? 예: MSI 2026 결승, 날짜, 회차, 공식 사이트 후보",
+            "constraints": "자동화 제약을 정해주세요. 예: 수량, 예산 상한, 좌석 선호, 허용/금지 행동",
+            "retry_policy": "실패하거나 빈자리가 없으면 어떻게 재시도할까요? 예: 1분마다, 5분마다, 상태 변화시에만",
+            "approval_boundary": "어떤 행동 직전에 반드시 멈추고 승인을 받을까요? 예: 좌석 선택, 예매확정, 결제",
         }
         return questions[slot]
 
@@ -162,6 +283,10 @@ class WorkflowDesigner:
             assumptions.append("Notifications default to web UI unless ntfy is requested.")
         if slots.get("risk") == "low":
             assumptions.append("Workflow starts read-only until a capability plan requires approval.")
+        if slots.get("risk") == "high":
+            assumptions.append("Consequential actions require fresh user approval before execution.")
+        if slots.get("retry_policy") == "manual_then_watch":
+            assumptions.append("First attempt is manual; unavailable states become a watched retry workflow.")
         return assumptions
 
     def _build_spec(
@@ -173,6 +298,8 @@ class WorkflowDesigner:
     ) -> WorkflowSpec:
         source = slots["source"]
         cadence = slots["cadence"]
+        if intent_type == IntentType.BROWSER_TRANSACTION:
+            return self._build_browser_transaction_spec(text, slots, assumptions)
         steps = [
             WorkflowStep(
                 step_id="collect",
@@ -214,17 +341,19 @@ class WorkflowDesigner:
             intent_type=intent_type,
             triggers=[{"type": trigger_type, "value": cadence}],
             inputs={"source": source, "cadence": cadence, "output": slots["output"]},
-            sources=[{"type": source, "mode": "fake_or_allowlisted"}],
+            sources=[{"type": source, "mode": "requires_real_source_binding"}],
             steps=steps,
             status=WorkflowStatus.PROPOSED,
             policy={"risk": slots["risk"], "activation_requires_approval": True},
             outputs=[{"type": slots["output"], "channel": slots.get("alert_path", "web")}],
-            evals=[{"type": "fake_probe", "required": True}],
+            evals=[{"type": "real_local_source_probe", "required": True}],
             assumptions=assumptions,
         )
 
     @staticmethod
     def _name_for(source: str, intent_type: IntentType) -> str:
+        if intent_type == IntentType.BROWSER_TRANSACTION:
+            return "Browser Transaction Workflow"
         if source == "mail":
             return "Mail Intelligence Workflow"
         if source in {"reddit", "community_web"}:
@@ -236,3 +365,110 @@ class WorkflowDesigner:
         if source == "channel":
             return "Idea Synthesis Workflow"
         return "Designed Workflow"
+
+    def _build_browser_transaction_spec(
+        self,
+        text: str,
+        slots: dict[str, Any],
+        assumptions: list[str],
+    ) -> WorkflowSpec:
+        steps = [
+            WorkflowStep(
+                step_id="verify_sources",
+                step_type=StepType.COLLECT,
+                name="Verify official sources",
+                config={"source": slots["source"], "purpose": "official_source_verification"},
+            ),
+            WorkflowStep(
+                step_id="ask_user_constraints",
+                step_type=StepType.ASK_USER,
+                name="Confirm user constraints",
+                config={
+                    "question": "수량, 예산 상한, 좌석 선호, 허용/금지 행동을 확인해주세요.",
+                    "slot": "constraints",
+                },
+                depends_on=["verify_sources"],
+            ),
+            WorkflowStep(
+                step_id="browser_observe",
+                step_type=StepType.BROWSER_OBSERVE,
+                name="Observe browser state",
+                config={
+                    "target": slots["target"],
+                    "source": slots["source"],
+                    "save_artifacts": True,
+                },
+                depends_on=["ask_user_constraints"],
+            ),
+            WorkflowStep(
+                step_id="browser_action",
+                step_type=StepType.BROWSER_ACTION,
+                name="Perform approved browser action",
+                config={
+                    "allowed_actions": ["navigate", "safe_click", "select_candidate"],
+                    "blocked_actions": ["payment", "booking_confirm_without_approval"],
+                    "approval_boundary": slots["approval_boundary"],
+                },
+                depends_on=["browser_observe"],
+            ),
+            WorkflowStep(
+                step_id="approval",
+                step_type=StepType.APPROVAL,
+                name="Wait for approval before consequential submit",
+                config={"boundary": slots["approval_boundary"]},
+                depends_on=["browser_action"],
+            ),
+            WorkflowStep(
+                step_id="report",
+                step_type=StepType.REPORT,
+                name="Render transaction report",
+                config={"output": slots["output"]},
+                depends_on=["approval"],
+            ),
+        ]
+        if slots.get("alert_path") == "ntfy":
+            steps.append(
+                WorkflowStep(
+                    step_id="notify",
+                    step_type=StepType.NOTIFY,
+                    name="Notify user",
+                    config={"channel": "ntfy"},
+                    depends_on=["report"],
+                )
+            )
+        retry_policy = slots.get("retry_policy") or "manual_then_watch"
+        trigger = {"type": "manual_then_interval", "value": retry_policy}
+        return WorkflowSpec(
+            name="Browser Transaction Workflow",
+            description=text.strip(),
+            goal=slots["goal"],
+            success_criteria=[
+                "Verify official source/platform",
+                "Pause for user login or missing constraints",
+                "Observe browser state and save artifacts",
+                "Require approval before consequential submit",
+                "Retry unavailable states according to policy",
+            ],
+            intent_type=IntentType.BROWSER_TRANSACTION,
+            triggers=[trigger],
+            inputs={
+                "source": slots["source"],
+                "target": slots["target"],
+                "constraints": slots["constraints"],
+                "retry_policy": retry_policy,
+                "approval_boundary": slots["approval_boundary"],
+                "output": slots["output"],
+            },
+            sources=[{"type": slots["source"], "mode": "requires_real_source_binding"}],
+            steps=steps,
+            status=WorkflowStatus.PROPOSED,
+            policy={
+                "risk": "high",
+                "activation_requires_approval": True,
+                "requires_user_presence": True,
+                "payment_without_approval": "deny",
+            },
+            outputs=[{"type": slots["output"], "channel": slots.get("alert_path", "web")}],
+            evals=[{"type": "browser_transaction_fixture_probe", "required": True}],
+            assumptions=assumptions,
+        )

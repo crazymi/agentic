@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import replace
 from pathlib import Path
 
-from agentic.config.models import ModelConfig
+from agentic.approvals.service import ApprovalService
+from agentic.approvals.store import ApprovalStore
+from agentic.artifacts import ArtifactStore
 from agentic.config.settings import AppConfig, load_app_config
 from agentic.models.local_gguf import LocalGGUFProvider
+from agentic.ops import HealthMonitor, run_operational_smoke
 from agentic.prompts.builder import PromptBuilder
 from agentic.app.chat import run_chat_once, run_chat_repl
 from agentic.runtime.preflight import run_preflight
+from agentic.runtime.daemon import default_state_db
+from agentic.sources import SourceStore
+from agentic.tasks.store import TaskStore
 from agentic.tasks.subagent_task import SubAgentTask
 from agentic.tools.registry import ToolRegistry
 from agentic.traces.logger import TraceLogger
+from agentic.workflow_kernel import WorkflowStore
 
 
 def main() -> None:
@@ -24,6 +32,13 @@ def main() -> None:
     subparsers.add_parser("config-check", help="validate config, prompts, and model paths")
     subparsers.add_parser("list-models", help="list configured local models")
     subparsers.add_parser("runner-check", help="check local runner build/runtime prerequisites")
+    subparsers.add_parser("ops-status", help="print operational health snapshot JSON")
+    ops_smoke = subparsers.add_parser("ops-smoke", help="run operational smoke checks")
+    ops_smoke.add_argument("--state-dir", default="", help="optional state directory for smoke stores")
+    ops_smoke.add_argument("--include-model", action="store_true", help="also run a real configured model smoke")
+    ops_smoke.add_argument("--model", default="", help="model id for --include-model")
+    ops_smoke.add_argument("--model-max-tokens", type=int, default=0, help="override model max tokens for --include-model")
+    ops_smoke.add_argument("--prompt", default="한국의 수도는 어디야? 답변만 한 문장으로 말해.", help="model smoke prompt")
 
     ask = subparsers.add_parser("ask", help="run one full-loop agent turn")
     ask.add_argument("message", nargs="+", help="message to send to the full-loop runtime")
@@ -37,7 +52,6 @@ def main() -> None:
     smoke = subparsers.add_parser("smoke", help="run one model smoke call")
     smoke.add_argument("--model", default="", help="configured model id")
     smoke.add_argument("--prompt", default="hello from phase 0", help="prompt text")
-    smoke.add_argument("--fake", action="store_true", help="use fake provider command")
     smoke.add_argument("--max-tokens", type=int, default=0, help="override configured max tokens")
 
     args = parser.parse_args()
@@ -62,6 +76,12 @@ def main() -> None:
     if args.command == "runner-check":
         _runner_check(config)
         return
+    if args.command == "ops-status":
+        _ops_status(config)
+        return
+    if args.command == "ops-smoke":
+        _ops_smoke(config, args.state_dir, args.include_model, args.model, args.model_max_tokens, args.prompt)
+        return
     if args.command == "ask":
         print(run_chat_once(config, " ".join(args.message)))
         return
@@ -72,7 +92,7 @@ def main() -> None:
         _serve(config, args.host, args.port)
         return
     if args.command == "smoke":
-        _smoke(config, args.model, args.prompt, args.fake, args.max_tokens)
+        _smoke(config, args.model, args.prompt, args.max_tokens)
         return
 
 
@@ -90,7 +110,7 @@ def _config_check(config: AppConfig) -> None:
         f"{_status(config.prompts.tool_call_grammar)} {config.prompts.tool_call_grammar}"
     )
     for model_id, model in config.models.items():
-        executable_status = "fake-ready" if not model.executable else _status(Path(model.executable))
+        executable_status = _status(Path(model.executable)) if model.executable else "missing"
         print(
             f"model.{model_id}: role={model.role} "
             f"model_path={_status(Path(model.model_path))} "
@@ -113,22 +133,53 @@ def _runner_check(config: AppConfig) -> None:
         raise SystemExit(1)
 
 
+def _ops_status(config: AppConfig) -> None:
+    state_dir = config.trace_dir / "state"
+    monitor = HealthMonitor(
+        task_store=TaskStore(default_state_db(config)),
+        workflow_store=WorkflowStore(state_dir / "workflows.sqlite3"),
+        source_store=SourceStore(state_dir / "sources.sqlite3"),
+        artifact_store=ArtifactStore(state_dir / "artifacts.sqlite3"),
+        approvals=ApprovalService(ApprovalStore(state_dir / "approvals.jsonl")),
+    )
+    print(json.dumps(monitor.snapshot().to_record(), ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def _ops_smoke(
+    config: AppConfig,
+    state_dir: str,
+    include_model: bool,
+    model_id: str,
+    model_max_tokens: int,
+    prompt: str,
+) -> None:
+    result = run_operational_smoke(
+        config,
+        state_dir=state_dir or None,
+        include_model=include_model,
+        model_id=model_id or None,
+        model_max_tokens=model_max_tokens or None,
+        model_prompt=prompt,
+    )
+    print(json.dumps(result.to_record(), ensure_ascii=False, indent=2, sort_keys=True))
+    if not result.ok:
+        raise SystemExit(1)
+
+
 def _smoke(
     config: AppConfig,
     model_id: str,
     prompt: str,
-    fake: bool,
     max_tokens: int,
 ) -> None:
     selected_id = model_id or config.runtime.default_master_model
-    configured_model = config.model(selected_id)
-    model = ModelConfig.fake(configured_model.role) if fake else configured_model
+    model = config.model(selected_id)
     if max_tokens > 0:
         model = replace(model, max_tokens=max_tokens)
-    if not fake and not model.executable and not model.command_template:
+    if not model.executable and not model.command_template:
         raise SystemExit(
             f"model '{selected_id}' has no executable configured. "
-            "Use --fake or set executable in config/config.toml."
+            "Set executable or command_template in config/config.toml."
         )
 
     builder = PromptBuilder.from_files(

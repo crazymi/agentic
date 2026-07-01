@@ -92,7 +92,7 @@ All prepared skills are instruction-only `SKILL.md` packages under `skills/`. No
 - MCP servers are disabled until manually reviewed and allowlisted.
 - Any externally visible or consequential action goes through deterministic policy.
 - Browser submit, email send, payment, ticket booking, file write/delete, remote repo mutation, and credential use require approval.
-- Automated tests must use fakes and fixtures, not live network, Gmail, ntfy, browser, or model calls.
+- Automated tests must use local fixtures, checked-in sample sources, or dry-run adapters instead of live network, Gmail, ntfy, browser, or model calls.
 - Secrets must be represented as references such as environment variable names or local credential IDs, never copied into traces or skill text.
 
 ## Mapping To User Requirements

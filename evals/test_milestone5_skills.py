@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentic.connectors import ConnectorRegistry, FakeConnector
+from agentic.connectors import ConnectorRegistry
 from agentic.skills import SkillLoadError, SkillLoader, SkillRegistry, SkillRequirementError
 from agentic.tools.registry import ToolRegistry
 
@@ -46,7 +46,7 @@ class Milestone5SkillTests(unittest.TestCase):
                 encoding="utf-8",
             )
             skill = SkillLoader().load(path)
-            registry = SkillRegistry([skill], connectors=ConnectorRegistry([FakeConnector()]))
+            registry = SkillRegistry([skill], connectors=ConnectorRegistry([]))
 
             with self.assertRaises(SkillRequirementError):
                 registry.check_requirements(skill)
@@ -55,7 +55,7 @@ class Milestone5SkillTests(unittest.TestCase):
         skills = SkillLoader("skills").load_all()
         registry = SkillRegistry(
             skills,
-            connectors=ConnectorRegistry([FakeConnector()]),
+            connectors=ConnectorRegistry([]),
             tools=ToolRegistry.with_defaults(),
         )
 

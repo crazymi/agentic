@@ -10,7 +10,7 @@ Completed:
 - workflow lifecycle validation
 - capability planner and admission outcomes
 - artifact registry for reports/scripts/datasets/configs/logs
-- workflow interpreter v0 for fake collect/analyze/report/notify steps
+- workflow interpreter v0 for source-backed collect/analyze/report/notify steps
 - scheduler store and due-runner v0
 - local web UI/API for workflow design, approve, activate, pause, run, and status
 - probe evals for newsletter, social trend, idea synthesis, browser watcher, and coding workflow representation
@@ -38,7 +38,7 @@ Manual smoke:
 - Open the local web UI.
 - Submit a workflow design request such as "주식 커뮤니티 글을 주기적으로 모아서 트렌드 보고서로 알려줘."
 - Confirm a proposal appears.
-- Approve/activate/run a safe fake workflow.
+- Approve/activate/run a workflow with a real local source binding.
 - Confirm a workflow run and report artifact are recorded.
 
 Notes:

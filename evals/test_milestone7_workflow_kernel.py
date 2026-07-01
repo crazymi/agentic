@@ -10,7 +10,9 @@ from agentic.app.server import create_app
 from agentic.approvals.service import ApprovalService
 from agentic.approvals.store import ApprovalStore
 from agentic.artifacts import ArtifactStore
+from agentic.resources.store import ResourceStore
 from agentic.scheduler import ScheduleRecord, ScheduleStore, SchedulerRunner
+from agentic.sources import SourceDefinition, SourceKind, SourceRuntime, SourceStore
 from agentic.traces.logger import TraceLogger
 from agentic.workflow_kernel import (
     CapabilityAdmission,
@@ -49,7 +51,7 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
     def test_workflow_store_persists_lifecycle_and_blocks_unapproved_activation(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = WorkflowStore(Path(tmpdir) / "workflows.sqlite3")
-            spec = _fake_spec()
+            spec = _local_spec("src_test")
             store.create_spec(spec)
 
             reloaded = WorkflowStore(Path(tmpdir) / "workflows.sqlite3").get_spec(spec.workflow_id)
@@ -95,24 +97,28 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
                     step_id="script",
                     step_type=StepType.RUN_SCRIPT,
                     name="Run generated script",
-                    config={"artifact_id": "art_fake"},
+                    config={"artifact_id": "art_review_required"},
                 )
             ],
         )
         script_plan = planner.plan(script_spec)
         self.assertEqual(script_plan.needs[0].admission, CapabilityAdmission.NEEDS_ARTIFACT_REVIEW)
 
-    def test_interpreter_executes_approved_fake_workflow_and_creates_report_artifact(self) -> None:
+    def test_interpreter_executes_approved_local_source_workflow_and_creates_report_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            workflow_store = WorkflowStore(Path(tmpdir) / "workflows.sqlite3")
-            artifact_store = ArtifactStore(Path(tmpdir) / "artifacts.sqlite3")
-            spec = workflow_store.create_spec(_fake_spec())
+            root = Path(tmpdir)
+            workflow_store = WorkflowStore(root / "workflows.sqlite3")
+            artifact_store = ArtifactStore(root / "artifacts.sqlite3")
+            source_store, resource_store, source_runtime, spec = _local_source_spec(root)
+            spec = workflow_store.create_spec(spec)
             workflow_store.transition_spec(spec.workflow_id, WorkflowStatus.PROPOSED)
             spec = workflow_store.transition_spec(spec.workflow_id, WorkflowStatus.APPROVED)
             builder = WorkflowBuilder(
                 WorkflowInterpreter(
                     workflow_store=workflow_store,
                     artifact_store=artifact_store,
+                    source_runtime=source_runtime,
+                    resource_store=resource_store,
                 )
             )
 
@@ -126,10 +132,12 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
 
     def test_scheduler_runs_due_active_workflow(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            workflow_store = WorkflowStore(Path(tmpdir) / "workflows.sqlite3")
-            artifact_store = ArtifactStore(Path(tmpdir) / "artifacts.sqlite3")
-            schedule_store = ScheduleStore(Path(tmpdir) / "schedules.sqlite3")
-            spec = workflow_store.create_spec(_fake_spec())
+            root = Path(tmpdir)
+            workflow_store = WorkflowStore(root / "workflows.sqlite3")
+            artifact_store = ArtifactStore(root / "artifacts.sqlite3")
+            schedule_store = ScheduleStore(root / "schedules.sqlite3")
+            source_store, resource_store, source_runtime, spec = _local_source_spec(root)
+            spec = workflow_store.create_spec(spec)
             workflow_store.transition_spec(spec.workflow_id, WorkflowStatus.PROPOSED)
             workflow_store.transition_spec(spec.workflow_id, WorkflowStatus.APPROVED)
             spec = workflow_store.transition_spec(spec.workflow_id, WorkflowStatus.ACTIVE)
@@ -141,6 +149,8 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
                     WorkflowInterpreter(
                         workflow_store=workflow_store,
                         artifact_store=artifact_store,
+                        source_runtime=source_runtime,
+                        resource_store=resource_store,
                     )
                 ),
             )
@@ -156,16 +166,20 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
             trace = TraceLogger(root / "trace.jsonl")
             workflow_store = WorkflowStore(root / "workflows.sqlite3")
             artifact_store = ArtifactStore(root / "artifacts.sqlite3")
+            source_store, resource_store, source_runtime, _ = _local_source_spec(root)
             app = create_app(
                 channel_loop=None,
                 approvals=ApprovalService(ApprovalStore(root / "approvals.jsonl"), trace),
                 trace=trace,
                 workflow_store=workflow_store,
+                source_store=source_store,
                 workflow_designer=WorkflowDesigner(),
                 workflow_builder=WorkflowBuilder(
                     WorkflowInterpreter(
                         workflow_store=workflow_store,
                         artifact_store=artifact_store,
+                        source_runtime=source_runtime,
+                        resource_store=resource_store,
                     )
                 ),
             )
@@ -201,30 +215,50 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
             self.assertGreaterEqual(len(spec.steps), 3)
 
 
-def _fake_spec() -> WorkflowSpec:
+def _local_source_spec(root: Path) -> tuple[SourceStore, ResourceStore, SourceRuntime, WorkflowSpec]:
+    source_file = root / "source.jsonl"
+    source_file.write_text(
+        '{"uri":"local://item-1","title":"Workflow source","content_text":"Workflow kernel collects real local data."}\n',
+        encoding="utf-8",
+    )
+    source_store = SourceStore(root / "sources.sqlite3")
+    resource_store = ResourceStore(root / "resources.sqlite3")
+    source = source_store.add_source(
+        SourceDefinition(
+            kind=SourceKind.LOCAL_FILE,
+            name="Local workflow source",
+            locator=source_file.as_uri(),
+            enabled=True,
+        )
+    )
+    source_runtime = SourceRuntime(source_store=source_store, resource_store=resource_store)
+    return source_store, resource_store, source_runtime, _local_spec(source.source_id)
+
+
+def _local_spec(source_id: str) -> WorkflowSpec:
     return WorkflowSpec(
-        name="Fake Workflow",
+        name="Local Source Workflow",
         goal="Prove workflow kernel execution",
         intent_type=IntentType.SCHEDULED_WORKFLOW,
         triggers=[{"type": "manual"}],
-        sources=[{"type": "fake"}],
+        sources=[{"type": "local_file", "source_id": source_id}],
         steps=[
             WorkflowStep(
                 step_id="collect",
                 step_type=StepType.COLLECT,
-                name="Collect fake items",
-                config={"source": "fake"},
+                name="Collect local items",
+                config={"source": "local_file", "source_id": source_id},
             ),
             WorkflowStep(
                 step_id="analyze",
                 step_type=StepType.ANALYZE,
-                name="Analyze fake items",
+                name="Analyze local items",
                 depends_on=["collect"],
             ),
             WorkflowStep(
                 step_id="report",
                 step_type=StepType.REPORT,
-                name="Report fake results",
+                name="Report local results",
                 depends_on=["analyze"],
             ),
         ],

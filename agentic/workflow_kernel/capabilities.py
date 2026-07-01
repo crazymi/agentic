@@ -72,11 +72,12 @@ class CapabilityPlanner:
     ):
         self.policy = policy or PolicyEngine()
         self.allowlisted_connectors = allowlisted_connectors or {
-            "fake",
-            "fixture",
+            "local_file",
+            "feed",
             "mail",
             "channel",
             "repo",
+            "repo_state",
         }
 
     def plan(self, spec: WorkflowSpec) -> CapabilityPlan:
@@ -94,6 +95,43 @@ class CapabilityPlanner:
         if step_type == StepType.COLLECT:
             source = str(config.get("source") or "unknown")
             return [self._connector_need(source, action="read")]
+        if step_type == StepType.ASK_USER:
+            return [
+                CapabilityNeed(
+                    capability="runtime:user_checkpoint",
+                    action="wait_for_input",
+                    admission=CapabilityAdmission.ALLOWED,
+                    reason="user checkpoints are core runtime behavior",
+                )
+            ]
+        if step_type == StepType.BROWSER_OBSERVE:
+            return [
+                CapabilityNeed(
+                    capability="connector:browser",
+                    action="observe",
+                    resource=str(config.get("target") or "browser"),
+                    payload=config,
+                    admission=CapabilityAdmission.MISSING,
+                    reason="live browser observation adapter is not implemented yet",
+                )
+            ]
+        if step_type == StepType.BROWSER_ACTION:
+            return [
+                CapabilityNeed(
+                    capability="connector:browser",
+                    action="act",
+                    resource=str(config.get("target") or "browser"),
+                    payload=config,
+                    admission=CapabilityAdmission.MISSING,
+                    reason="live browser action adapter is not implemented yet",
+                ),
+                self._policy_need(
+                    "tool:browser_submit",
+                    "submit",
+                    str(config.get("target") or "browser"),
+                    config,
+                ),
+            ]
         if step_type == StepType.CALL_CONNECTOR:
             connector = str(config.get("connector") or config.get("source") or "unknown")
             return [self._connector_need(connector, action=str(config.get("action") or "read"))]
@@ -101,12 +139,13 @@ class CapabilityPlanner:
             tool = str(config.get("tool") or "unknown")
             return [self._policy_need(f"tool:{tool}", str(config.get("action") or "execute"), "", config)]
         if step_type == StepType.RUN_SCRIPT:
+            artifact_id = str(config.get("artifact_id") or "generated_script")
             return [
                 CapabilityNeed(
                     capability="artifact:script",
                     action="execute",
-                    resource=str(config.get("artifact_id") or "generated_script"),
-                    payload={"workflow_id": workflow_id},
+                    resource=artifact_id,
+                    payload={"workflow_id": workflow_id, "artifact_id": artifact_id},
                     admission=CapabilityAdmission.NEEDS_ARTIFACT_REVIEW,
                     reason="generated scripts require artifact admission and approval",
                 )
@@ -134,7 +173,7 @@ class CapabilityPlanner:
         ]
 
     def _connector_need(self, connector: str, *, action: str) -> CapabilityNeed:
-        if connector in {"reddit", "community_web", "web_page"}:
+        if connector in {"reddit", "community_web", "web_page", "browser_page"}:
             return CapabilityNeed(
                 capability=f"connector:{connector}",
                 action=action,

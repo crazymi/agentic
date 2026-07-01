@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from agentic.artifacts import ArtifactKind, ArtifactRecord, ArtifactStore
+from agentic.resources.store import ResourceRecord, ResourceStore
+from agentic.sources.runtime import SourceRuntime
 from agentic.traces.logger import TraceLogger
 from agentic.workflow_kernel.capabilities import (
     CapabilityAdmission,
@@ -30,11 +32,15 @@ class WorkflowInterpreter:
         *,
         workflow_store: WorkflowStore,
         artifact_store: ArtifactStore,
+        source_runtime: SourceRuntime | None = None,
+        resource_store: ResourceStore | None = None,
         capability_planner: CapabilityPlanner | None = None,
         trace: TraceLogger | None = None,
     ):
         self.workflow_store = workflow_store
         self.artifact_store = artifact_store
+        self.source_runtime = source_runtime
+        self.resource_store = resource_store
         self.capability_planner = capability_planner or CapabilityPlanner()
         self.trace = trace
 
@@ -143,16 +149,19 @@ class WorkflowInterpreter:
         step_results: dict[str, Any],
     ) -> dict[str, Any]:
         if step_type == StepType.COLLECT:
-            source = str(config.get("source") or "fake")
+            if self.source_runtime is None or self.resource_store is None:
+                raise RuntimeError("collect step requires SourceRuntime and ResourceStore")
+            source_id = str(config.get("source_id") or "")
+            if not source_id:
+                raise RuntimeError("collect step requires source_id")
+            collection = self.source_runtime.collect(source_id)
+            resources = [self.resource_store.get(resource_id) for resource_id in collection.resource_ids]
             return {
-                "items": [
-                    {
-                        "id": f"{source}-item-1",
-                        "title": f"Sample {source} item",
-                        "text": f"Fake source item for {spec.goal}",
-                    }
-                ],
-                "source": source,
+                "items": [_resource_to_item(resource) for resource in resources],
+                "source_id": source_id,
+                "collected_count": collection.collected_count,
+                "new_count": collection.new_count,
+                "resource_ids": collection.resource_ids,
             }
         if step_type == StepType.TRANSFORM:
             return {"transformed": True, "input_keys": sorted(step_results.keys())}
@@ -233,3 +242,13 @@ class WorkflowBuilder:
         if spec.status.value not in {"approved", "active"}:
             raise ValueError("workflow must be approved or active before execution")
         return self.interpreter.run(spec, trigger=trigger)
+
+
+def _resource_to_item(resource: ResourceRecord) -> dict[str, Any]:
+    return {
+        "id": resource.resource_id,
+        "uri": resource.uri,
+        "title": resource.title,
+        "text": resource.content_text,
+        "metadata": resource.metadata,
+    }
