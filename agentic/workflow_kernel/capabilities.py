@@ -76,6 +76,8 @@ class CapabilityPlanner:
             "feed",
             "mail",
             "channel",
+            "web_page",
+            "browser_page",
             "repo",
             "repo_state",
         }
@@ -83,12 +85,12 @@ class CapabilityPlanner:
     def plan(self, spec: WorkflowSpec) -> CapabilityPlan:
         needs: list[CapabilityNeed] = []
         for step in spec.steps:
-            needs.extend(self._needs_for_step(spec.workflow_id, step.step_type, step.config))
+            needs.extend(self._needs_for_step(spec, step.step_type, step.config))
         return CapabilityPlan(workflow_id=spec.workflow_id, needs=needs)
 
     def _needs_for_step(
         self,
-        workflow_id: str,
+        spec: WorkflowSpec,
         step_type: StepType,
         config: dict[str, Any],
     ) -> list[CapabilityNeed]:
@@ -145,7 +147,7 @@ class CapabilityPlanner:
                     capability="artifact:script",
                     action="execute",
                     resource=artifact_id,
-                    payload={"workflow_id": workflow_id, "artifact_id": artifact_id},
+                    payload={"workflow_id": spec.workflow_id, "artifact_id": artifact_id},
                     admission=CapabilityAdmission.NEEDS_ARTIFACT_REVIEW,
                     reason="generated scripts require artifact admission and approval",
                 )
@@ -153,6 +155,17 @@ class CapabilityPlanner:
         if step_type == StepType.NOTIFY:
             channel = str(config.get("channel") or "web")
             if channel == "ntfy":
+                if _allows_unattended_user_notification(spec):
+                    return [
+                        CapabilityNeed(
+                            capability="channel:ntfy",
+                            action="send",
+                            resource="user_notification",
+                            payload=config,
+                            admission=CapabilityAdmission.ALLOWED,
+                            reason="low-risk read-only workflow may notify the owner through configured ntfy",
+                        )
+                    ]
                 return [self._policy_need("channel:ntfy", "send", "user_notification", config)]
         if step_type == StepType.APPROVAL:
             return [
@@ -173,13 +186,13 @@ class CapabilityPlanner:
         ]
 
     def _connector_need(self, connector: str, *, action: str) -> CapabilityNeed:
-        if connector in {"reddit", "community_web", "web_page", "browser_page"}:
+        if connector in {"reddit", "community_web"}:
             return CapabilityNeed(
                 capability=f"connector:{connector}",
                 action=action,
                 resource=connector,
                 admission=CapabilityAdmission.REQUIRES_APPROVAL,
-                reason="external source connector is not enabled by default",
+                reason="named external source must be bound to an enabled source definition first",
             )
         if connector not in self.allowlisted_connectors:
             return CapabilityNeed(
@@ -226,3 +239,18 @@ class CapabilityPlanner:
             admission=admission,
             reason=decision.reason,
         )
+
+
+def _allows_unattended_user_notification(spec: WorkflowSpec) -> bool:
+    policy = spec.policy or {}
+    if policy.get("risk") != "low":
+        return False
+    if policy.get("activation_requires_approval"):
+        return False
+    sensitive_steps = {
+        StepType.BROWSER_ACTION,
+        StepType.RUN_SCRIPT,
+    }
+    if any(step.step_type in sensitive_steps for step in spec.steps):
+        return False
+    return True

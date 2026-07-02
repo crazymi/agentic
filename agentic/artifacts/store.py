@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from agentic.artifacts.models import ArtifactRecord, ArtifactStatus
+from agentic.artifacts.models import ArtifactKind, ArtifactRecord, ArtifactStatus
 
 
 def utc_now() -> str:
@@ -55,6 +55,8 @@ class ArtifactStore:
         *,
         workflow_id: str | None = None,
         run_id: str | None = None,
+        kind: ArtifactKind | str | None = None,
+        status: ArtifactStatus | str | None = None,
         limit: int = 100,
     ) -> list[ArtifactRecord]:
         clauses: list[str] = []
@@ -65,6 +67,12 @@ class ArtifactStore:
         if run_id is not None:
             clauses.append("run_id = ?")
             params.append(run_id)
+        if kind is not None:
+            clauses.append("kind = ?")
+            params.append(ArtifactKind(kind).value)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(ArtifactStatus(status).value)
         where = f" where {' and '.join(clauses)}" if clauses else ""
         params.append(limit)
         with self._connect() as conn:

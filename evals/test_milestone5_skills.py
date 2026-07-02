@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 
 from agentic.connectors import ConnectorRegistry
+from agentic.agents.master import MasterAgent
+from agentic.agents.subagent import SubAgent
+from agentic.models.local_gguf import ModelResponse
+from agentic.prompts.builder import PromptBuilder
 from agentic.skills import SkillLoadError, SkillLoader, SkillRegistry, SkillRequirementError
+from agentic.tasks.subagent_task import SubAgentTask
 from agentic.tools.registry import ToolRegistry
 
 
@@ -64,6 +69,87 @@ class Milestone5SkillTests(unittest.TestCase):
 
         self.assertIn("idea-capture", [skill.name for skill in selected])
         self.assertIn("Normalize the user's idea", context)
+
+    def test_active_vague_workflow_builder_routes_korean_workflow_request(self) -> None:
+        skills = SkillLoader("skills").load_all()
+        registry = SkillRegistry(
+            skills,
+            connectors=ConnectorRegistry([]),
+            tools=ToolRegistry.with_defaults(),
+        )
+
+        selected = registry.route("반복 자동화 워크플로우 만들어줘")
+        context = registry.prompt_context(selected)
+
+        self.assertIn("vague-workflow-builder", [skill.name for skill in selected])
+        self.assertIn("Vague Workflow Builder", context)
+
+    def test_master_agent_injects_selected_skill_context(self) -> None:
+        provider = CapturingProvider(system_prompt=True)
+        skills = SkillRegistry(
+            SkillLoader("skills").load_all(),
+            tools=ToolRegistry.with_defaults(),
+        )
+        agent = MasterAgent(
+            provider=provider,  # type: ignore[arg-type]
+            prompt_builder=PromptBuilder(),
+            skills=skills,
+        )
+
+        agent.generate("반복 자동화 워크플로우 만들어줘")
+
+        self.assertIn("Relevant skills:", provider.last_prompt)
+        self.assertIn("vague-workflow-builder", provider.last_prompt)
+        self.assertNotIn("gmail-newsletter-analysis", provider.last_prompt)
+
+    def test_subagent_injects_selected_skill_context(self) -> None:
+        provider = CapturingProvider(system_prompt=True)
+        tools = ToolRegistry.with_defaults()
+        skills = SkillRegistry(SkillLoader("skills").load_all(), tools=tools)
+        agent = SubAgent(
+            provider=provider,  # type: ignore[arg-type]
+            prompt_builder=PromptBuilder(),
+            tools=tools,
+            skills=skills,
+        )
+
+        agent.generate_for_task(SubAgentTask("반복 자동화 워크플로우 proposal 만들어줘"))
+
+        self.assertIn("Relevant skills:", provider.last_prompt)
+        self.assertIn("vague-workflow-builder", provider.last_prompt)
+
+    def test_skill_routing_uses_original_request_not_prompt_examples(self) -> None:
+        provider = CapturingProvider(system_prompt=True)
+        skills = SkillRegistry(
+            SkillLoader("skills").load_all(),
+            tools=ToolRegistry.with_defaults(),
+        )
+        agent = MasterAgent(
+            provider=provider,  # type: ignore[arg-type]
+            prompt_builder=PromptBuilder(),
+            skills=skills,
+        )
+        message = (
+            "Create a proposal.\n"
+            "Original request: 반복 자동화 워크플로우 만들어줘\\n"
+            "Question examples: Gmail, Obsidian, repo, browser, ticket."
+        )
+
+        selected = agent.selected_skill_names(message)
+
+        self.assertIn("vague-workflow-builder", selected)
+        self.assertNotIn("gmail-newsletter-analysis", selected)
+        self.assertNotIn("obsidian-knowledge-linking", selected)
+
+
+class CapturingProvider:
+    def __init__(self, *, system_prompt: bool):
+        self.config = type("Config", (), {"system_prompt": "sys" if system_prompt else ""})()
+        self.last_prompt = ""
+
+    def generate(self, prompt: str) -> ModelResponse:
+        self.last_prompt = prompt
+        return ModelResponse(text='{"action":"answer","answer":"ok"}', command=("fake",), returncode=0)
 
 
 if __name__ == "__main__":

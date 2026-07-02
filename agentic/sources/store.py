@@ -83,6 +83,32 @@ class SourceStore:
             )
         return updated
 
+    def update_source(self, source: SourceDefinition) -> SourceDefinition:
+        current = self.get_source(source.source_id)
+        updated = SourceDefinition.from_record(
+            {
+                **source.to_record(),
+                "created_at": current.created_at,
+                "updated_at": utc_now(),
+            }
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """
+                update source_definitions
+                set kind = ?, enabled = ?, record_json = ?, updated_at = ?
+                where source_id = ?
+                """,
+                (
+                    updated.kind.value,
+                    int(updated.enabled),
+                    self._dump(updated.to_record()),
+                    updated.updated_at,
+                    updated.source_id,
+                ),
+            )
+        return updated
+
     def add_item_dedup(self, item: SourceItem) -> tuple[SourceItem, bool]:
         with self._connect() as conn:
             existing = conn.execute(

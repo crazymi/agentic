@@ -61,7 +61,9 @@ Configured model candidates:
 - FastAPI local web UI.
 - Chat form and recent message display.
 - Pending approval list with approve/deny buttons.
-- ntfy channel implementation with injected test transport support for evals.
+- ntfy channel implementation with approval and generic report notification support.
+- Durable report delivery records for artifact -> channel sends, including retryable failed ntfy delivery.
+- Report delivery admission: low-quality report artifacts are not enqueued for ntfy delivery.
 - `ApprovalRequest` lifecycle and JSONL-backed approval store.
 - Deterministic policy engine for sensitive capabilities.
 - Approval-aware tool bridge.
@@ -74,7 +76,16 @@ Configured model candidates:
 - Bounded worker pool.
 - Background `chat_turn` task enqueue from web messages.
 - Heartbeat, watchdog, pause/resume/cancel, and restart recovery.
+- Worker-level heartbeat refresh during long agent/model execution, so durable tasks
+  remain observable while local GGUF calls are still running.
 - Task routes and task status UI.
+- `runtime-tick` can run one durable runtime cycle: scheduler due work, queued task kick, watchdog, report delivery enqueue, and ntfy send.
+- `runtime-daemon` can run that cycle continuously.
+- `serve` starts the local web UI and a background runtime daemon loop.
+- Web/API surfaces for runtime daemon status and report deliveries:
+  - `GET /daemon`
+  - `POST /daemon/tick`
+  - `GET /deliveries`
 
 ### Operational Health
 
@@ -101,6 +112,10 @@ Configured model candidates:
 - Skill registry and routing by keyword/task kind.
 - Requirement checks for needed tools/connectors/resources.
 - Prompt context builder.
+- Skill Workshop for agent-created pending skill proposals and revision proposals.
+- Review records with candidate validation, active/candidate diff, and hashes.
+- Approval-gated apply that verifies the exact reviewed candidate/diff before
+  writing an active `SKILL.md`.
 
 Prepared local skills include:
 
@@ -177,7 +192,7 @@ Prepared local skills include:
 - Source definitions and source policies.
 - Source item model with dedupe fingerprints.
 - SQLite `SourceStore`.
-- Local file, mail-like JSONL, feed-like JSONL, browser-page-file, and repo-state collectors.
+- Local file, mail-like JSONL, feed-like JSONL, live web page, browser-page-file, and repo-state collectors.
 - `SourceRuntime` that writes raw source items into `ResourceStore`.
 - Credential reference model and SQLite store.
 - Secret-like metadata/reference rejection for sources and credentials.
@@ -186,6 +201,25 @@ Prepared local skills include:
 - Generated script/config review gate.
 - Dry-run gate that never executes script code.
 - Policy gates for generated scripts, browser submit, email send, file write, shell, booking, payment, and external connectors.
+
+### Live Web Collection And Resource Trends
+
+- `web_fetch`, `html_extract_links`, and `web_search` tools are available through the tool registry.
+- `web_search` supports external providers: Brave (`BRAVE_API_KEY`), Tavily (`TAVILY_API_KEY`), Exa (`EXA_API_KEY`), Serper (`SERPER_API_KEY`), and SearXNG (`SEARXNG_BASE_URL`).
+- The project root `.env` is loaded automatically by CLI/config paths and by `web_search`; real `.env` stays ignored by git.
+- `WebPageSourceCollector` can fetch real HTTP(S) pages and extract link resources using generic filters:
+  - `href_contains`
+  - `href_contains_all`
+  - `href_excludes`
+  - `text_excludes`
+  - `text_exclude_regexes`
+  - `min_text_chars`
+  - `limit`
+- `web-collect` stores real collected items in `ResourceStore`.
+- `resource-trends` summarizes terms from stored resources.
+- Source quality gates check navigation noise, short text, duplicate text, source path/query identity drift, and notice/code-like noise before analysis/reporting.
+- Source strategy recovery can propose/apply safer extraction metadata, including required href fragments and navigation/noise filters.
+- This is a framework primitive for agents to choose and tune collection strategies; it is not a hardcoded community crawler.
 
 ### Workflow Probe Pack
 
@@ -332,6 +366,123 @@ Run real user-requirement benchmark:
 .venv/bin/python -m agentic.app.cli real-bench
 ```
 
+Collect a real web page into ResourceStore:
+
+```bash
+.venv/bin/python -m agentic.app.cli web-collect \
+  --url "https://gall.dcinside.com/board/lists/?id=neostock" \
+  --href-contains "/board/view" \
+  --href-excludes "no=1" \
+  --href-excludes "no=45649" \
+  --text-exclude-regex "^\\[[0-9]+\\]$" \
+  --min-text-chars 4 \
+  --limit 10
+```
+
+Summarize stored resource trends:
+
+```bash
+.venv/bin/python -m agentic.app.cli resource-trends --state-dir traces/state/web_collect --limit 30 --top-n 12
+```
+
+Create or inspect pending skill proposals without writing active `SKILL.md` files:
+
+```bash
+.venv/bin/python -m agentic.app.cli skill-workshop list
+```
+
+Apply a pending skill proposal only after an approval request is created and approved:
+
+```bash
+.venv/bin/python -m agentic.app.cli skill-workshop review \
+  --proposal-id skp_example
+.venv/bin/python -m agentic.app.cli skill-workshop request-apply \
+  --proposal-id skp_example
+.venv/bin/python -m agentic.app.cli approvals approve \
+  --approval-id appr_example
+.venv/bin/python -m agentic.app.cli skill-workshop apply \
+  --proposal-id skp_example \
+  --approval-id appr_example
+```
+
+Run the real workflow-building harness probe. This throws a vague automation request
+at the harness, answers the interview loop, and verifies that the agent creates a
+pending skill proposal instead of writing an active skill file:
+
+```bash
+.venv/bin/python -m agentic.app.cli harness-probe \
+  --answer "커뮤니티 웹 페이지를 소스로 쓰고, 필요한 경우 에이전트가 수집 전략을 선택하게 해." \
+  --answer "1분마다 수집하고 1시간마다 분석해서 웹 보고서와 ntfy 알림으로 알려줘."
+```
+
+Run the same probe through the durable task runtime. This creates a
+`workflow_builder_probe` task, lets the worker claim it, and stores the final result
+in SQLite:
+
+```bash
+.venv/bin/python -m agentic.app.cli harness-probe-task \
+  --answer "커뮤니티 웹 페이지를 소스로 쓰고, 필요한 경우 에이전트가 수집 전략을 선택하게 해." \
+  --answer "1분마다 수집하고 1시간마다 분석해서 웹 보고서와 ntfy 알림으로 알려줘."
+```
+
+Generate a reviewable `WorkflowSpec` through the real harness path. The task records
+a full session log in `sessions.sqlite3` and stores the proposed workflow in
+`workflows.sqlite3`:
+
+```bash
+.venv/bin/python -m agentic.app.cli harness-workflow-spec-probe-task \
+  --answer "커뮤니티 웹 페이지를 소스로 쓰고, 필요한 경우 에이전트가 수집 전략을 선택하게 해." \
+  --answer "1분마다 수집하고 1시간마다 분석해서 웹 보고서와 ntfy 알림으로 알려줘."
+```
+
+Run the real front-door finish-line benchmark. This sends an intentionally vague
+request through the web workflow routes, answers the interview twice, activates the
+workflow through lifecycle gates, runs the scheduler/tick path, and requires a sent
+ntfy delivery plus a passing report-quality gate unless `--allow-no-delivery` is
+explicitly used for developer-only local checks:
+
+```bash
+.venv/bin/python -m agentic.app.cli finish-line-bench \
+  --state-dir traces/state/finish_line_live \
+  --ntfy-topic "$NTFY_TOPIC"
+```
+
+Push a proposed workflow through deterministic lifecycle gates:
+
+```bash
+.venv/bin/python -m agentic.app.cli sources add-web \
+  --state-dir traces/state/live_probe \
+  --url "https://example.com/source" \
+  --alias reddit
+.venv/bin/python -m agentic.app.cli workflow-lifecycle review \
+  --state-dir traces/state/live_probe \
+  --workflow-id wf_example
+.venv/bin/python -m agentic.app.cli workflow-lifecycle bind-sources \
+  --state-dir traces/state/live_probe \
+  --workflow-id wf_example
+.venv/bin/python -m agentic.app.cli workflow-lifecycle approve \
+  --workflow-id wf_example
+.venv/bin/python -m agentic.app.cli workflow-lifecycle activate \
+  --state-dir traces/state/live_probe \
+  --workflow-id wf_example
+.venv/bin/python -m agentic.app.cli scheduler-run-due \
+  --state-dir traces/state/live_probe
+```
+
+`approve`, `activate`, and `run` intentionally fail when required live sources are
+not bound. Read-only enabled web sources can run unattended after binding, while
+browser submit, shell, file write, payment, email send, and similar consequential
+actions still require policy/approval gates. The default config now uses the
+single lighter Gemma IQ2 model for both Master and Subagent so framework
+iteration stays fast and avoids repeated 16GB model swaps. Q4 Gemma and
+DiffusionGemma Q4 remain configured opt-in candidates for slower quality probes.
+
+Active skills are loaded into the Master/Subagent prompt context when their triggers
+match the original user request. If an agent proposes a skill name that already
+exists, Skill Workshop records it as a pending revision proposal instead of failing
+or overwriting files directly. Approval requests bind the active hash, candidate
+hash, diff hash, and review hash; `apply` rejects drift from what was reviewed.
+
 Print recent experience events:
 
 ```bash
@@ -433,5 +584,6 @@ Latest default verification:
 
 .venv/bin/python -m agentic.app.cli real-bench
 # real benchmark executes; current overall result is not fully passing because
-# Gmail credentials, ticket URL/live browser adapter, Reddit access, and model output are unresolved.
+# Gmail credentials, ticket URL/live browser adapter, and Reddit access are unresolved.
+# Local GGUF master model output is now non-empty with the corrected generation budget.
 ```

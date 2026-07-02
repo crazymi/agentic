@@ -65,8 +65,14 @@ class MasterTurn:
         self.trace = trace
 
     def decide(self, user_message: str) -> MasterDecision:
-        self._record("master_model_called", {"message": user_message})
-        response = self.agent.generate(user_message)
+        self._record(
+            "master_model_called",
+            {
+                "message": user_message,
+                "skills": _selected_skill_names(self.agent, user_message),
+            },
+        )
+        response = self._generate(user_message)
 
         try:
             decision = MasterDecision.parse(response.text)
@@ -85,10 +91,24 @@ class MasterTurn:
         if addition is not None:
             a, b = addition
             return MasterDecision.delegate(f"Use add tool to compute {a}+{b}.")
+        if _looks_like_workflow_spec_request(user_message):
+            return MasterDecision.delegate(_workflow_spec_task(user_message))
+        if _looks_like_skill_workshop_request(user_message):
+            return MasterDecision.delegate(_skill_workshop_task(user_message))
+        if _looks_like_workflow_request(user_message):
+            return MasterDecision.delegate(_workflow_design_task(user_message))
         answer = sanitize_user_facing_answer(response.text)
         if not answer:
             answer = "답변을 정리하지 못했습니다."
         return MasterDecision.answer_directly(answer)
+
+    def _generate(self, user_message: str) -> ModelResponse:
+        try:
+            return self.agent.generate(user_message, trace=self.trace)
+        except TypeError as exc:
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            return self.agent.generate(user_message)
 
     def _record_decision(self, decision: MasterDecision) -> None:
         payload = {"action": decision.action}
@@ -108,3 +128,104 @@ def _find_simple_addition(text: str) -> tuple[int, int] | None:
     if match is None:
         return None
     return int(match.group(1)), int(match.group(2))
+
+
+def _selected_skill_names(agent: MasterAgent, user_message: str) -> list[str]:
+    selector = getattr(agent, "selected_skill_names", None)
+    if not callable(selector):
+        return []
+    try:
+        return list(selector(user_message))
+    except Exception:
+        return []
+
+
+def _looks_like_skill_workshop_request(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in ("skill", "스킬", "skill.md", "proposal", "제안"))
+
+
+def _looks_like_workflow_request(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        token in lowered
+        for token in (
+            "workflow",
+            "워크플로우",
+            "자동화",
+            "주기",
+            "마다",
+            "크롤",
+            "보고서",
+            "알림",
+            "watch",
+            "monitor",
+        )
+    )
+
+
+def _looks_like_workflow_spec_request(text: str) -> bool:
+    lowered = text.lower()
+    return "workflow_spec" in lowered or "workflow spec" in lowered or "workflowspec" in lowered
+
+
+def _workflow_spec_task(user_message: str) -> str:
+    compact = _compact_skill_workshop_request(user_message)
+    return (
+        "Create a pending WorkflowSpec using the workflow_spec tool. "
+        "Do not execute, approve, activate, crawl, write scripts, or write user workflow files. "
+        f"Original request and slots: {compact}. "
+        "Use the compact arguments: action=create, name, goal, description, trigger, source, "
+        "step_types, output, success_criteria, assumptions, capabilities, and policy. "
+        "Use short strings. Prefer step_types collect, analyze, aggregate, report, notify. "
+        "Output one JSON tool call only."
+    )
+
+
+def _skill_workshop_task(user_message: str) -> str:
+    compact = _compact_skill_workshop_request(user_message)
+    return (
+        "Create a pending skill proposal using the skill_workshop tool. "
+        "Do not write active skill files. "
+        "Use name vague-workflow-builder when the request is about vague workflow building. "
+        f"Original request and slots: {compact}. "
+        "The proposal_body must be exactly seven short markdown bullets covering: "
+        "Trigger, Interview, Discovery, Proposal, Approval, Recording, Evolution. "
+        "Output one JSON tool call only."
+    )
+
+
+def _workflow_design_task(user_message: str) -> str:
+    return (
+        "Create a pending skill proposal using the skill_workshop tool for a reusable workflow-building procedure. "
+        "Do not implement the user's concrete workflow and do not write active skill files. "
+        "The proposal should help future agents handle vague workflow requests like: "
+        f"{user_message!r}. "
+        "Include how to interview the user, discover required tools/connectors/storage, propose runnable workflow specs, "
+        "gate risky actions through approval, and record experience after execution."
+    )
+
+
+def _compact_skill_workshop_request(user_message: str, *, limit: int = 900) -> str:
+    original = _extract_line_after(user_message, "Original request:")
+    slots = _extract_line_after(user_message, "Extracted slots:")
+    missing = _extract_line_after(user_message, "Missing slots:")
+    parts = []
+    if original:
+        parts.append(f"request={original}")
+    if slots:
+        parts.append(f"slots={slots}")
+    if missing:
+        parts.append(f"missing={missing}")
+    compact = "; ".join(parts) or " ".join(user_message.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit].rstrip() + "..."
+
+
+def _extract_line_after(text: str, marker: str) -> str:
+    index = text.find(marker)
+    if index < 0:
+        return ""
+    after = text[index + len(marker):].strip()
+    return after.splitlines()[0].strip()

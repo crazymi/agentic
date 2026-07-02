@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,7 @@ class AppConfig:
 def load_app_config(config_path: str | Path = "config/config.toml") -> AppConfig:
     config_path = Path(config_path).resolve()
     root = config_path.parent.parent
+    load_dotenv(root / ".env")
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
     project = data.get("project", {})
@@ -112,3 +114,59 @@ def _read_optional_text(root: Path, value: str | Path) -> str:
     if not value:
         return ""
     return _resolve(root, value).read_text(encoding="utf-8").strip()
+
+
+def load_dotenv(path: str | Path, *, override: bool = False) -> dict[str, str]:
+    dotenv_path = Path(path)
+    if not dotenv_path.exists():
+        return {}
+    loaded: dict[str, str] = {}
+    for line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        parsed = _parse_dotenv_line(line)
+        if parsed is None:
+            continue
+        key, value = parsed
+        if not override and key in os.environ:
+            continue
+        os.environ[key] = value
+        loaded[key] = value
+    return loaded
+
+
+def _parse_dotenv_line(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    if stripped.startswith("export "):
+        stripped = stripped[len("export ") :].lstrip()
+    if "=" not in stripped:
+        return None
+    key, value = stripped.split("=", 1)
+    key = key.strip()
+    if not key or not key.replace("_", "A").isalnum() or key[0].isdigit():
+        return None
+    return key, _parse_dotenv_value(value.strip())
+
+
+def _parse_dotenv_value(value: str) -> str:
+    if not value:
+        return ""
+    if value[0] == value[-1:] and value[0] in {"'", '"'}:
+        inner = value[1:-1]
+        if value[0] == '"':
+            return bytes(inner, "utf-8").decode("unicode_escape")
+        return inner
+    result: list[str] = []
+    escaped = False
+    for char in value:
+        if escaped:
+            result.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "#":
+            break
+        result.append(char)
+    return "".join(result).strip()

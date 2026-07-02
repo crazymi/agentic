@@ -13,9 +13,15 @@ APPROVAL_REQUIRED_CAPABILITIES = {
     "tool:booking",
     "tool:browser_submit",
     "tool:email_send",
+    "tool:edit_file",
+    "tool:exec",
     "tool:shell",
     "tool:file_write",
     "tool:payment",
+    "tool:process",
+    "tool:python_execute",
+    "tool:write_file",
+    "tool:apply_patch",
 }
 
 DENIED_CAPABILITIES = {
@@ -28,6 +34,13 @@ class PolicyEngine:
     def decide(self, request: CapabilityRequest) -> PolicyDecision:
         if request.capability == "tool:add":
             return PolicyDecision(PolicyAction.ALLOW, "safe local arithmetic tool")
+        if request.capability in {
+            "tool:read_file",
+            "tool:list_files",
+            "tool:search_files",
+            "tool:web_search",
+        }:
+            return PolicyDecision(PolicyAction.ALLOW, "read-only local or web lookup tool")
         if request.capability in DENIED_CAPABILITIES:
             return PolicyDecision(PolicyAction.DENY, "capability is denied")
         if request.capability in APPROVAL_REQUIRED_CAPABILITIES:

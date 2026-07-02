@@ -77,6 +77,22 @@ class ResourceStore:
             ).fetchall()
         return [self._record(row) for row in rows]
 
+    def list(self, *, limit: int = 100) -> list[ResourceRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "select * from resources order by created_at desc limit ?",
+                (limit,),
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def list_by_source(self, source_id: str, *, limit: int = 100) -> list[ResourceRecord]:
+        records = self.list(limit=max(limit * 5, limit))
+        return [
+            record
+            for record in records
+            if str(record.metadata.get("source_id") or "") == source_id
+        ][:limit]
+
     def _init_schema(self) -> None:
         with self._connect() as conn:
             conn.execute(

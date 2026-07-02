@@ -14,8 +14,8 @@ subagent = "prompts/subagent_phase1.md"
 tool_call_grammar = "prompts/tool_call_grammar.md"
 
 [runtime]
-default_master_model = "master-gemma-q4"
-default_subagent_model = "subagent-diffusiongemma-q4"
+default_master_model = "master-gemma-iq2"
+default_subagent_model = "subagent-gemma-iq2"
 trace_file = "traces/phase1.jsonl"
 
 [models.master-gemma-q4]
@@ -23,10 +23,10 @@ role = "master"
 name = "gemma-4-26B-A4B-it-UD-Q4_K_XL"
 model_path = "models/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
 executable = "runtimes/llama.cpp/build-cuda/bin/llama-completion"
-args = ["-ngl", "99", "-c", "1024", "-b", "128", "-ub", "128", "--jinja", "--single-turn", "--reasoning", "off", "--reasoning-budget", "0", "--no-display-prompt", "--no-warmup"]
+args = ["-ngl", "99", "-c", "1536", "-b", "128", "-ub", "128", "--jinja", "--single-turn", "--reasoning", "off", "--reasoning-budget", "0", "--no-display-prompt", "--no-warmup"]
 system_prompt_file = "prompts/master_phase1.md"
 prompt_via_stdin = false
-max_tokens = 64
+max_tokens = 256
 timeout_s = 600
 
 [models.master-gemma-iq2]
@@ -34,10 +34,21 @@ role = "master"
 name = "gemma-4-26B-A4B-it-UD-IQ2_XXS"
 model_path = "models/gemma-4-26B-A4B-it-UD-IQ2_XXS.gguf"
 executable = "runtimes/llama.cpp/build-cuda/bin/llama-completion"
-args = ["-ngl", "99", "-c", "1024", "-b", "128", "-ub", "128", "--jinja", "--single-turn", "--reasoning", "off", "--reasoning-budget", "0", "--no-display-prompt", "--no-warmup"]
+args = ["-ngl", "99", "-c", "1536", "-b", "128", "-ub", "128", "--jinja", "--single-turn", "--reasoning", "off", "--reasoning-budget", "0", "--no-display-prompt", "--no-warmup"]
 system_prompt_file = "prompts/master_phase1.md"
 prompt_via_stdin = false
-max_tokens = 64
+max_tokens = 256
+timeout_s = 600
+
+[models.subagent-gemma-iq2]
+role = "subagent"
+name = "gemma-4-26B-A4B-it-UD-IQ2_XXS"
+model_path = "models/gemma-4-26B-A4B-it-UD-IQ2_XXS.gguf"
+executable = "runtimes/llama.cpp/build-cuda/bin/llama-completion"
+args = ["-ngl", "99", "-c", "1536", "-b", "128", "-ub", "128", "--jinja", "--single-turn", "--reasoning", "off", "--reasoning-budget", "0", "--no-display-prompt", "--no-warmup"]
+system_prompt_file = "prompts/subagent_phase1.md"
+prompt_via_stdin = false
+max_tokens = 256
 timeout_s = 600
 
 [models.subagent-diffusiongemma-q4]
@@ -45,8 +56,8 @@ role = "subagent"
 name = "diffusiongemma-26B-A4B-it-Q4_K_M"
 model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf"
 executable = "runtimes/llama.cpp/build-cuda/bin/llama-diffusion-cli"
-args = ["-ngl", "99", "-c", "512", "-b", "128", "-ub", "128", "--diffusion-eb-max-steps", "16"]
+args = ["-ngl", "99", "-c", "1024", "-b", "128", "-ub", "128", "--diffusion-eb-max-steps", "16"]
 system_prompt_file = "prompts/subagent_phase1.md"
 prompt_via_stdin = false
-max_tokens = 16
+max_tokens = 512
 timeout_s = 600

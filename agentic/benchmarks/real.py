@@ -26,6 +26,8 @@ from agentic.experience.store import ExperienceStore
 from agentic.memory.idea import capture_idea
 from agentic.memory.store import MemoryStore
 from agentic.models.local_gguf import LocalGGUFProvider
+from agentic.resources.store import ResourceStore
+from agentic.sources import SourceDefinition, SourceKind, SourceRuntime, SourceStore
 from agentic.synthesis.ideas import synthesize_ideas
 
 
@@ -42,7 +44,7 @@ class RealBenchmarkOptions:
     include_ntfy: bool = True
     include_model: bool = True
     model_id: str = ""
-    model_max_tokens: int = 16
+    model_max_tokens: int = 256
     model_prompt: str = "한국의 수도는 어디야? 답변만 한 문장으로 말해."
     reddit_url: str = DEFAULT_REDDIT_URL
     dcinside_url: str = DEFAULT_DCINSIDE_URL
@@ -72,7 +74,7 @@ def run_real_benchmark(config: AppConfig, options: RealBenchmarkOptions | None =
             probes.extend(
                 [
                     _probe_reddit_live(options.reddit_url),
-                    _probe_dcinside_live(options.dcinside_url),
+                    _probe_dcinside_live(options.dcinside_url, state_dir),
                 ]
             )
         if options.include_model:
@@ -315,19 +317,45 @@ def _probe_reddit_live(url: str) -> RealBenchmarkProbeResult:
         )
 
 
-def _probe_dcinside_live(url: str) -> RealBenchmarkProbeResult:
+def _probe_dcinside_live(url: str, state_dir: Path) -> RealBenchmarkProbeResult:
     started = _now()
     try:
-        html = _http_get(url, accept="text/html")
-        titles = _extract_dcinside_titles(html)
+        source_store = SourceStore(state_dir / "dcinside_sources.sqlite3")
+        resource_store = ResourceStore(state_dir / "dcinside_resources.sqlite3")
+        source = source_store.add_source(
+            SourceDefinition(
+                kind=SourceKind.WEB_PAGE,
+                name="DCInside stock gallery live page",
+                locator=url,
+                enabled=True,
+                metadata={
+                    "extract": {
+                        "href_contains": ["/board/view"],
+                        "href_excludes": ["no=1", "no=45649"],
+                        "text_excludes": ["공지", "AD"],
+                        "text_exclude_regexes": [r"^\[\d+\]$"],
+                        "min_text_chars": 4,
+                        "limit": 10,
+                    }
+                },
+            )
+        )
+        collection = SourceRuntime(source_store=source_store, resource_store=resource_store).collect(source.source_id)
+        resources = [resource_store.get(resource_id) for resource_id in collection.resource_ids]
+        titles = [resource.title for resource in resources]
         return RealBenchmarkProbeResult(
             probe_id="dcinside_stock_live",
             title="DCInside stock gallery crawl",
             requirement="주식갤 최근 글을 실제로 수집하고 트렌드 분석 재료로 저장한다.",
             status=RealBenchmarkStatus.COMPLETED if titles else RealBenchmarkStatus.COMPLETED_EMPTY,
-            summary=f"Fetched DCInside live HTML and extracted {len(titles)} title(s).",
-            evidence={"url": url, "titles": titles[:10], "html_chars": len(html)},
-            next_actions=["Add per-site parser/rate policy and persist posts into ResourceStore."],
+            summary=f"Fetched DCInside live HTML and stored {len(titles)} resource(s).",
+            evidence={
+                "url": url,
+                "titles": titles[:10],
+                "resource_ids": collection.resource_ids,
+                "state_dir": str(state_dir),
+            },
+            next_actions=["Add scheduler interval and trend synthesis over persisted resources."],
             started_at=started,
             finished_at=_now(),
         )

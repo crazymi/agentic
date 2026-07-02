@@ -16,7 +16,9 @@ from agentic.tasks.subagent_task import SubAgentTask, TaskState
 from agentic.tools.add import add
 from agentic.tools.parser import parse_tool_call
 from agentic.tools.registry import ToolRegistry
+from agentic.tools.workflow_spec import workflow_spec_tool
 from agentic.traces.logger import TraceLogger
+from agentic.workflow_kernel import WorkflowStore
 
 
 class Phase0ModuleTests(unittest.TestCase):
@@ -44,6 +46,82 @@ class Phase0ModuleTests(unittest.TestCase):
         self.assertIn("subagent response", response.text)
         self.assertIn("add", response.text)
 
+    def test_subagent_skill_workshop_task_uses_compact_generation_budget(self) -> None:
+        script = "import sys; print('max_tokens=' + sys.argv[1])"
+        provider = LocalGGUFProvider(
+            ModelConfig(
+                model_id="local-echo-subagent",
+                name="local-echo-subagent",
+                role="subagent",
+                executable=sys.executable,
+                command_template=(sys.executable, "-c", script, "{max_tokens}"),
+                timeout_s=10.0,
+                max_tokens=512,
+            )
+        )
+        agent = SubAgent(
+            provider=provider,
+            prompt_builder=PromptBuilder(),
+            tools=ToolRegistry.with_defaults(),
+        )
+
+        response = agent.generate_for_task(
+            SubAgentTask("Use skill_workshop to create a pending skill proposal.")
+        )
+
+        self.assertIn("max_tokens=384", response.raw_text)
+
+    def test_subagent_workflow_spec_task_uses_compact_generation_budget(self) -> None:
+        script = "import sys; print('max_tokens=' + sys.argv[1])"
+        provider = LocalGGUFProvider(
+            ModelConfig(
+                model_id="local-echo-subagent",
+                name="local-echo-subagent",
+                role="subagent",
+                executable=sys.executable,
+                command_template=(sys.executable, "-c", script, "{max_tokens}"),
+                timeout_s=10.0,
+                max_tokens=512,
+            )
+        )
+        agent = SubAgent(
+            provider=provider,
+            prompt_builder=PromptBuilder(),
+            tools=ToolRegistry.with_defaults(),
+        )
+
+        response = agent.generate_for_task(
+            SubAgentTask("Create a pending WorkflowSpec using the workflow_spec tool.")
+        )
+
+        self.assertIn("max_tokens=384", response.raw_text)
+
+    def test_model_trace_records_raw_output_length(self) -> None:
+        script = "print('<|channel>analysis\\ninternal only')"
+        provider = LocalGGUFProvider(
+            ModelConfig(
+                model_id="local-internal-output",
+                name="local-internal-output",
+                role="subagent",
+                executable=sys.executable,
+                command_template=(sys.executable, "-c", script),
+                timeout_s=10.0,
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trace = TraceLogger(Path(tmpdir) / "trace.jsonl")
+
+            response = provider.generate("hello", trace=trace)
+            completed_events = [
+                event for event in trace.read_events()
+                if event.event_type == "model_call_completed"
+            ]
+
+        self.assertEqual(response.text, "")
+        self.assertGreater(len(response.raw_text), 0)
+        self.assertEqual(completed_events[0].payload["text_chars"], 0)
+        self.assertGreater(completed_events[0].payload["raw_text_chars"], 0)
+
     def test_tool_schema_is_visible_to_subagent(self) -> None:
         prompt = PromptBuilder().subagent_prompt(
             SubAgentTask("Compute 1+1."),
@@ -60,6 +138,14 @@ class Phase0ModuleTests(unittest.TestCase):
 
     def test_tool_call_json_is_parsed(self) -> None:
         call = parse_tool_call('{"tool":"add","arguments":{"a":1,"b":1}}')
+
+        self.assertEqual(call.tool, "add")
+        self.assertEqual(call.arguments, {"a": 1, "b": 1})
+
+    def test_tool_call_json_is_extracted_from_model_text(self) -> None:
+        call = parse_tool_call(
+            'I will use a tool.\n{"tool":"add","arguments":{"a":1,"b":1}}\nDone.'
+        )
 
         self.assertEqual(call.tool, "add")
         self.assertEqual(call.arguments, {"a": 1, "b": 1})
@@ -127,6 +213,53 @@ class Phase0ModuleTests(unittest.TestCase):
             "tool_result",
         ])
         self.assertEqual(json.loads(lines[2])["payload"]["result"], 2)
+
+    def test_workflow_spec_tool_creates_proposed_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "workflows.sqlite3"
+            tool = workflow_spec_tool(db_path)
+
+            result = tool.fn(
+                action="create",
+                name="Recurring Trend Workflow",
+                goal="Collect and report community trends.",
+                triggers=[{"type": "interval", "value": "interval:60s"}],
+                sources=[{"kind": "community_web"}],
+                steps=[
+                    {"step_type": "collect", "name": "Collect sources"},
+                    {"step_type": "analyze", "name": "Analyze signals"},
+                    {"step_type": "report", "name": "Render report"},
+                ],
+                outputs=[{"kind": "report"}],
+                success_criteria=["Report is created."],
+            )
+            spec = WorkflowStore(db_path).get_spec(result["workflow"]["workflow_id"])
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(spec.status.value, "proposed")
+        self.assertEqual([step.step_type.value for step in spec.steps], ["collect", "analyze", "report"])
+
+    def test_workflow_spec_tool_accepts_compact_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "workflows.sqlite3"
+            tool = workflow_spec_tool(db_path)
+
+            result = tool.fn(
+                action="create",
+                name="Recurring Trend Workflow",
+                goal="Report recurring trend signals.",
+                trigger="interval:60s",
+                source="community_web+reddit",
+                step_types=["collect", "analyze", "report", "notify"],
+                output="report",
+            )
+            spec = WorkflowStore(db_path).get_spec(result["workflow"]["workflow_id"])
+
+        self.assertTrue(result["ok"])
+        self.assertEqual([step.step_type.value for step in spec.steps], ["collect", "analyze", "report", "notify"])
+        self.assertEqual(spec.triggers[0]["value"], "interval:60s")
+        self.assertEqual([source["kind"] for source in spec.sources], ["community_web", "reddit"])
+        self.assertEqual(spec.outputs[0]["kind"], "report")
 
 
 def _echo_model(role: str) -> ModelConfig:

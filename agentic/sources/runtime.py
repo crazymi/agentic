@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib import request
+from urllib.parse import unquote, urljoin, urlparse
 
 from agentic.resources.store import ResourceKind, ResourceRecord, ResourceStore
 from agentic.sources.models import SourceCollector, SourceDefinition, SourceItem, SourceKind
+from agentic.sources.quality import SourceQualityReport, evaluate_source_quality, quality_thresholds
 from agentic.sources.store import SourceStore
 
 
@@ -17,6 +21,8 @@ class SourceCollectionResult:
     collected_count: int
     new_count: int
     resource_ids: list[str]
+    recent_resource_ids: list[str]
+    quality: SourceQualityReport
 
 
 class LocalFileSourceCollector:
@@ -113,6 +119,83 @@ class RepoStateSourceCollector:
         ]
 
 
+class WebPageSourceCollector:
+    def collect(self, source: SourceDefinition) -> list[SourceItem]:
+        response = _fetch_url(source.locator)
+        html = response["text"]
+        extraction = dict(source.metadata.get("extract") or {})
+        if extraction:
+            items = self._extract_items(source, html, extraction)
+            if items:
+                return items
+        return [
+            SourceItem(
+                source_id=source.source_id,
+                uri=response["url"],
+                title=source.name,
+                content_text=html,
+                metadata={
+                    "collector": "web_page",
+                    "status": response["status"],
+                    "content_type": response["content_type"],
+                    "extraction": "full_page",
+                },
+            )
+        ]
+
+    def _extract_items(
+        self,
+        source: SourceDefinition,
+        html: str,
+        extraction: dict,
+    ) -> list[SourceItem]:
+        parser = _AnchorParser(base_url=source.locator)
+        parser.feed(html)
+        href_contains = [str(item) for item in extraction.get("href_contains") or []]
+        href_contains_all = [str(item) for item in extraction.get("href_contains_all") or []]
+        href_excludes = [str(item) for item in extraction.get("href_excludes") or []]
+        text_excludes = [str(item) for item in extraction.get("text_excludes") or []]
+        text_exclude_regexes = [re.compile(str(item)) for item in extraction.get("text_exclude_regexes") or []]
+        min_text_chars = int(extraction.get("min_text_chars") or 0)
+        limit = int(extraction.get("limit") or 20)
+        items: list[SourceItem] = []
+        seen: set[str] = set()
+        for link in parser.links:
+            href = link["href"]
+            title = link["text"]
+            if href_contains and not any(fragment in href for fragment in href_contains):
+                continue
+            if href_contains_all and not all(fragment in href for fragment in href_contains_all):
+                continue
+            if href_excludes and any(fragment in href for fragment in href_excludes):
+                continue
+            if text_excludes and any(fragment in title for fragment in text_excludes):
+                continue
+            if min_text_chars and len(title) < min_text_chars:
+                continue
+            if text_exclude_regexes and any(pattern.search(title) for pattern in text_exclude_regexes):
+                continue
+            if href in seen:
+                continue
+            seen.add(href)
+            items.append(
+                SourceItem(
+                    source_id=source.source_id,
+                    uri=href,
+                    title=title,
+                    content_text=title,
+                    metadata={
+                        "collector": "web_page",
+                        "extraction": "links",
+                        "source_url": source.locator,
+                    },
+                )
+            )
+            if len(items) >= limit:
+                break
+        return items
+
+
 class SourceRuntime:
     def __init__(
         self,
@@ -127,6 +210,7 @@ class SourceRuntime:
             SourceKind.LOCAL_FILE: LocalFileSourceCollector(),
             SourceKind.MAIL: LocalFileSourceCollector(),
             SourceKind.FEED: LocalFileSourceCollector(),
+            SourceKind.WEB_PAGE: WebPageSourceCollector(),
             SourceKind.BROWSER_PAGE: LocalFileSourceCollector(),
             SourceKind.REPO_STATE: RepoStateSourceCollector(),
         }
@@ -139,6 +223,13 @@ class SourceRuntime:
         if collector is None:
             raise ValueError(f"no collector registered for source kind: {source.kind}")
         items = collector.collect(source)
+        min_score, min_items = quality_thresholds(source.metadata)
+        quality = evaluate_source_quality(
+            items,
+            source_url=source.locator,
+            min_score=min_score,
+            min_items=min_items,
+        )
         resource_ids: list[str] = []
         new_count = 0
         for item in items:
@@ -148,11 +239,20 @@ class SourceRuntime:
             new_count += 1
             resource = self.resource_store.add(_resource_from_source_item(source, stored))
             resource_ids.append(resource.resource_id)
+        recent_resource_ids = [
+            resource.resource_id
+            for resource in self.resource_store.list_by_source(
+                source.source_id,
+                limit=max(len(items), len(resource_ids), 20),
+            )
+        ]
         return SourceCollectionResult(
             source_id=source.source_id,
             collected_count=len(items),
             new_count=new_count,
             resource_ids=resource_ids,
+            recent_resource_ids=recent_resource_ids,
+            quality=quality,
         )
 
 
@@ -210,3 +310,54 @@ def _run_git(root: Path, args: list[str]) -> str:
         message = completed.stderr.strip() or completed.stdout.strip()
         raise RuntimeError(f"git command failed: {' '.join(args)}: {message}")
     return completed.stdout.strip()
+
+
+def _fetch_url(url: str) -> dict[str, str | int]:
+    req = request.Request(
+        url,
+        headers={
+            "User-Agent": "agentic-source-runtime/0.1 (+local personal agent)",
+            "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+        },
+        method="GET",
+    )
+    with request.urlopen(req, timeout=20) as response:
+        status = getattr(response, "status", None) or response.getcode() or 200
+        return {
+            "url": response.geturl(),
+            "status": int(status),
+            "content_type": response.headers.get("content-type", ""),
+            "text": response.read().decode("utf-8", errors="replace"),
+        }
+
+
+class _AnchorParser(HTMLParser):
+    def __init__(self, *, base_url: str):
+        super().__init__()
+        self.base_url = base_url
+        self.links: list[dict[str, str]] = []
+        self._href: str | None = None
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        attrs_dict = {key: value or "" for key, value in attrs}
+        href = attrs_dict.get("href")
+        if not href:
+            return
+        self._href = urljoin(self.base_url, href)
+        self._text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a" or self._href is None:
+            return
+        text = " ".join(part.strip() for part in self._text if part.strip())
+        if text:
+            self.links.append({"href": self._href, "text": text})
+        self._href = None
+        self._text = []

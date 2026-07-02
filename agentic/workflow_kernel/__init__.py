@@ -24,6 +24,10 @@ from agentic.workflow_kernel.interpreter import (
     WorkflowExecutionResult,
     WorkflowInterpreter,
 )
+from agentic.workflow_kernel.lifecycle import (
+    WorkflowLifecycleAdvanceResult,
+    WorkflowLifecycleService,
+)
 
 __all__ = [
     "IntentRouter",
@@ -47,4 +51,6 @@ __all__ = [
     "CapabilityNeed",
     "CapabilityPlan",
     "CapabilityPlanner",
+    "WorkflowLifecycleAdvanceResult",
+    "WorkflowLifecycleService",
 ]

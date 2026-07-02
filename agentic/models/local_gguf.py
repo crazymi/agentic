@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Mapping
 
 from agentic.config.models import ModelConfig
@@ -25,6 +25,9 @@ class LocalGGUFProvider:
     def __init__(self, config: ModelConfig):
         self.config = config
 
+    def with_max_tokens(self, max_tokens: int) -> "LocalGGUFProvider":
+        return LocalGGUFProvider(replace(self.config, max_tokens=max_tokens))
+
     def generate(self, prompt: str, trace: TraceLogger | None = None) -> ModelResponse:
         command = self._build_command(prompt)
         if trace:
@@ -34,6 +37,7 @@ class LocalGGUFProvider:
                     "model_id": self.config.model_id,
                     "role": self.config.role,
                     "model_path": self.config.model_path,
+                    "max_tokens": self.config.max_tokens,
                 },
             )
         completed = subprocess.run(
@@ -52,6 +56,7 @@ class LocalGGUFProvider:
                         "model_id": self.config.model_id,
                         "returncode": completed.returncode,
                         "stderr": completed.stderr.strip(),
+                        "max_tokens": self.config.max_tokens,
                     },
                 )
             raise RuntimeError(
@@ -77,6 +82,8 @@ class LocalGGUFProvider:
                     "model_id": self.config.model_id,
                     "role": self.config.role,
                     "text_chars": len(response.text),
+                    "raw_text_chars": len(response.raw_text),
+                    "max_tokens": self.config.max_tokens,
                 },
             )
         return response

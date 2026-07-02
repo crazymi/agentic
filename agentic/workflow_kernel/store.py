@@ -58,6 +58,41 @@ class WorkflowStore:
             raise KeyError(f"unknown workflow id: {workflow_id}")
         return WorkflowSpec.from_record(json.loads(row["record_json"]))
 
+    def update_spec(
+        self,
+        spec: WorkflowSpec,
+        *,
+        event_type: str = "workflow_updated",
+        event_payload: dict[str, Any] | None = None,
+    ) -> WorkflowSpec:
+        current = self.get_spec(spec.workflow_id)
+        if current.version != spec.version:
+            raise ValueError("workflow version mismatch")
+        now = utc_now()
+        updated = WorkflowSpec.from_record({**spec.to_record(), "updated_at": now})
+        with self._connect() as conn:
+            conn.execute(
+                """
+                update workflow_specs
+                set status = ?, record_json = ?, updated_at = ?, approved_at = ?
+                where workflow_id = ?
+                """,
+                (
+                    updated.status.value,
+                    self._dump(updated.to_record()),
+                    updated.updated_at,
+                    updated.approved_at,
+                    updated.workflow_id,
+                ),
+            )
+            self._append_event_conn(
+                conn,
+                event_type,
+                event_payload or {"workflow_id": updated.workflow_id},
+                workflow_id=updated.workflow_id,
+            )
+        return updated
+
     def list_specs(
         self,
         *,

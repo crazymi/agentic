@@ -36,25 +36,35 @@ class PromptBuilder:
             tool_call_grammar=Path(tool_call_grammar_path).read_text(encoding="utf-8").strip(),
         )
 
-    def master_prompt(self, user_message: str) -> str:
+    def master_prompt(self, user_message: str, *, skill_context: str = "") -> str:
+        skill_block = ["<skills>", skill_context, "</skills>"] if skill_context else []
         return "\n".join(
             [
                 "<system>",
                 self.master_system,
                 "</system>",
+                *skill_block,
                 "<user>",
                 user_message,
                 "</user>",
             ]
         )
 
-    def subagent_prompt(self, task: SubAgentTask, tool_schemas: list[dict[str, Any]]) -> str:
+    def subagent_prompt(
+        self,
+        task: SubAgentTask,
+        tool_schemas: list[dict[str, Any]],
+        *,
+        skill_context: str = "",
+    ) -> str:
+        skill_block = ["<skills>", skill_context, "</skills>"] if skill_context else []
         return "\n".join(
             [
                 "<system>",
                 self.subagent_system,
                 self.tool_call_grammar,
                 "</system>",
+                *skill_block,
                 "<tools>",
                 json.dumps(tool_schemas, ensure_ascii=False, sort_keys=True),
                 "</tools>",
@@ -64,13 +74,18 @@ class PromptBuilder:
             ]
         )
 
-    def subagent_user_prompt(self, task: SubAgentTask, tool_schemas: list[dict[str, Any]]) -> str:
-        return "\n".join(
-            [
-                "Available tools:",
-                json.dumps(tool_schemas, ensure_ascii=False, sort_keys=True),
-                "",
-                "Task:",
-                task.instruction,
-            ]
-        )
+    def subagent_user_prompt(
+        self,
+        task: SubAgentTask,
+        tool_schemas: list[dict[str, Any]],
+        *,
+        skill_context: str = "",
+    ) -> str:
+        parts = [
+            "Available tools:",
+            json.dumps(tool_schemas, ensure_ascii=False, sort_keys=True),
+        ]
+        if skill_context:
+            parts.extend(["", "Relevant skills:", skill_context])
+        parts.extend(["", "Task:", task.instruction])
+        return "\n".join(parts)

@@ -48,13 +48,21 @@ class SkillRegistry:
                 selected.append(skill)
         return selected
 
-    def prompt_context(self, skills: list[SkillPackage]) -> str:
+    def prompt_context(
+        self,
+        skills: list[SkillPackage],
+        *,
+        max_body_chars: int = 700,
+    ) -> str:
         blocks = []
         for skill in skills:
             self.check_requirements(skill)
+            body = skill.body
+            if max_body_chars > 0 and len(body) > max_body_chars:
+                body = body[:max_body_chars].rstrip() + "\n..."
             blocks.append(
                 f"## Skill: {skill.name}\n"
                 f"{skill.manifest.description}\n\n"
-                f"{skill.body}"
+                f"{body}"
             )
         return "\n\n".join(blocks)

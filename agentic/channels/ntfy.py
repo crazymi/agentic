@@ -37,18 +37,20 @@ class NtfyChannel:
         self.transport = transport or _urllib_transport
 
     def send_approval_request(self, approval: ApprovalRequest) -> bool:
-        if not self.config.enabled or not self.config.topic:
-            return False
-        url = f"{self.config.server.rstrip('/')}/{self.config.topic}"
         body = (
             f"Approval required: {approval.capability}\n"
             f"{approval.reason}\n"
             f"{self.config.web_url.rstrip('/')}/"
         )
-        headers = {
-            "Title": self.config.title,
-            "Tags": "warning",
-        }
+        return self.send_text(title=self.config.title, body=body, tags="warning")
+
+    def send_text(self, *, title: str, body: str, tags: str = "") -> bool:
+        if not self.config.enabled or not self.config.topic:
+            return False
+        url = f"{self.config.server.rstrip('/')}/{self.config.topic}"
+        headers = {"Title": title}
+        if tags:
+            headers["Tags"] = tags
         try:
             status = self.transport(url, body.encode("utf-8"), headers)
         except URLError:

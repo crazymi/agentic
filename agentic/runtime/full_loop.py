@@ -9,6 +9,8 @@ from agentic.models.local_gguf import LocalGGUFProvider
 from agentic.prompts.builder import PromptBuilder
 from agentic.runtime.subagent_loop import SubagentLoop, SubagentLoopResult
 from agentic.runtime.turn import MasterDecision, MasterTurn
+from agentic.skills.loader import SkillLoader
+from agentic.skills.registry import SkillRegistry
 from agentic.tasks.ledger import TaskLedger
 from agentic.tasks.subagent_task import SubAgentTask
 from agentic.tools.registry import ToolRegistry
@@ -42,7 +44,12 @@ class FullLoopRuntime:
         self.trace = trace
 
     @classmethod
-    def from_config(cls, config: AppConfig) -> "FullLoopRuntime":
+    def from_config(
+        cls,
+        config: AppConfig,
+        *,
+        state_dir: str | Path | None = None,
+    ) -> "FullLoopRuntime":
         prompt_builder = PromptBuilder.from_files(
             config.prompts.master,
             config.prompts.subagent,
@@ -51,17 +58,26 @@ class FullLoopRuntime:
         trace = TraceLogger(config.runtime.trace_file)
         master_provider = LocalGGUFProvider(config.model(config.runtime.default_master_model))
         subagent_provider = LocalGGUFProvider(config.model(config.runtime.default_subagent_model))
-        tools = ToolRegistry.with_defaults()
+        tools = ToolRegistry.with_defaults(state_dir=state_dir)
+        skills = SkillRegistry(
+            SkillLoader(config.root / "skills").load_all(),
+            tools=tools,
+        )
 
         return cls(
             master_turn=MasterTurn(
-                MasterAgent(provider=master_provider, prompt_builder=prompt_builder),
+                MasterAgent(
+                    provider=master_provider,
+                    prompt_builder=prompt_builder,
+                    skills=skills,
+                ),
                 trace=trace,
             ),
             subagent_loop=SubagentLoop(
                 provider=subagent_provider,
                 prompt_builder=prompt_builder,
                 tools=tools,
+                skills=skills,
                 trace=trace,
             ),
             ledger=TaskLedger(trace=trace),

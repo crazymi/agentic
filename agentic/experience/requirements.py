@@ -71,6 +71,7 @@ USER_REQUIREMENT_PROBES: tuple[RequirementProbe, ...] = (
         probe_id="mobile_approval_notification",
         title="Mobile approval and notification loop",
         request="승인이 필요한 작업이 생기면 ntfy로 알려주고 모바일에서 승인할 수 있게 해줘",
+        continuation_answer="승인 이벤트와 채널 이벤트를 소스로 보고, ntfy 알림과 웹 승인 UI를 결과로 다뤄줘.",
         expected_pattern="approval request -> notification -> mobile/web approval",
         tags=["channel", "ntfy", "approval"],
     ),
@@ -228,4 +229,3 @@ def _heuristic_bottlenecks(probe: RequirementProbe, spec) -> list[str]:
     if probe.probe_id == "wsj_newsletter_analysis":
         bottlenecks.append("live_gmail_missing: checked-in mail source works, production Gmail OAuth ingestion is not implemented")
     return bottlenecks
-

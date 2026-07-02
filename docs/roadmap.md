@@ -43,19 +43,35 @@ These are framework-level modules, not individual user skills.
 | --- | --- | --- |
 | Channel | Communicate with the user and accept inbound messages | local web chat, mobile replies, ntfy notification links |
 | Approval | Ask permission before sensitive actions | send email, book ticket, write files, run shell, spend money |
-| Tool | Execute one typed local action | add, read file, run script, launch browser step |
+| Tool | Execute one typed local action | add, read/write/edit/search files, apply patches, run shell/Python, search web |
 | Connector | Adapt an external system into resources/tools/prompts | Gmail, Obsidian, browser, ntfy, GitHub |
 | MCP Connector | Standard connector boundary for external tool/resource servers | filesystem, browser automation, mail, search, code tools |
 | Skill | Reusable procedure/instructions for accomplishing a class of task | newsletter analysis procedure, coding loop, browser macro creation |
+| Skill Workshop | Govern agent-proposed skill changes before activation | create/list/inspect/revise/reject/quarantine pending skill proposals |
+| WorkflowSpec Tool | Capture agent-proposed workflow intent as a reviewable spec | compact source/trigger/step/output intent -> proposed WorkflowSpec |
+| Full Session Log | Preserve the complete user-agent-runtime transcript for audits | request, interview turns, agent instruction, agent response, generated workflow artifact |
+| Workflow Lifecycle Gate | Move WorkflowSpecs through deterministic review/source-binding/approval/activation | block approval when live source bindings are missing |
+| Source Binding Strategy | Bind agent-named sources to enabled source definitions | alias-based live web source binding, read-only admission, multi-source collect |
+| Source Quality Gate | Separate successful collection from useful collection before analysis/reporting | block navigation-heavy or off-target source runs before report artifacts are created |
+| Source Identity Gate | Preserve requested source identity through extraction and recovery | query/path-bound forum links such as `id=stock_new2`, not adjacent board links |
+| Source Strategy Tuning | Turn source quality failures into reviewable strategy proposals | tooling backlog -> source metadata proposal -> apply -> rerun quality gate |
+| Source Strategy Recovery | Execute source tuning as an automatically enqueued durable task | quality failure -> recovery task queued -> safe apply -> live rerun -> tooling completed |
+| Recent-Window Analysis | Analyze recent stored resources when a recurring run has no new items | hourly crawler report still uses the recent collected window after dedupe |
+| Runtime Daemon Loop | Continuously run scheduler/task/delivery ticks while the harness is serving | queued recovery -> live rerun -> report delivery without manual CLI kick |
 | Hook | Event-triggered runtime entry point | new email, task completed, approval timed out, trace anomaly |
 | Scheduler | Time-based trigger and recurring execution | daily WSJ scan, periodic idea synthesis, watchdog checks |
 | Background Task | Durable long-running work with lifecycle and heartbeat | ticket watcher, crawler, self-review daemon |
 | TaskFlow | Multi-step orchestration across agents, tools, approvals, and retries | investigate newsletter, draft report, ask follow-up, store memory |
 | Memory Store | Durable internal memory and user context | preferences, standing goals, task history, idea graph metadata |
 | Resource Store | External documents and assets referenced by agents | Obsidian vault, Gmail messages, web pages, screenshots |
+| Delivery Store | Durable outbound artifact delivery state | report artifact -> ntfy/mobile notification, retry failed sends |
+| Report Quality Gate | Block outbound reports that are only structurally present but too thin to use | required sections, evidence count, signal count, source quality metadata |
+| Model-Assisted Report Synthesis | Let a configured local model turn collected resources into grounded report insights behind admission gates | evidence-bound insight extraction, prompt-meta filtering, model-synthesis pass/fail metadata |
 | Policy | Rules for capability limits, credentials, and approvals | which tools need approval, which jobs may run unattended |
 | Trace/Replay | Structured event log for debugging and evals | reproduce a failed browser macro or newsletter analysis |
 | Experience Loop | Convert attempts, failures, bottlenecks, and lessons into reusable state | requirement smoke, tooling backlog, skill proposals, roadmap updates |
+| Live Collection Strategy | Let agents choose and tune real collection methods | HTTP fetch, static HTML parsing, browser escalation, API connector, ResourceStore persistence |
+| Search Provider Tool | Use external search APIs when static fetch/extraction is not enough | Brave, Tavily, Exa, Serper, SearXNG-backed `web_search` |
 
 OpenClaw separates concepts such as skills, plugins, and automation. MCP standardizes external capability exposure through servers and capabilities such as tools, resources, prompts, lifecycle, and discovery. This harness borrows those shapes but keeps the implementation local, small, and personal.
 
@@ -352,6 +368,7 @@ Acceptance criteria:
 
 - workflow can declare a source without hardcoding a vertical implementation
 - source collection can store raw resources and derived artifacts
+- real web pages can be fetched into ResourceStore through generic filters
 - generated script cannot run before admission and approval
 - connector/MCP activation is allowlisted and traceable
 - credential values never enter prompts, docs, traces, or specs
@@ -379,6 +396,8 @@ Acceptance criteria:
 
 - each probe is represented as a `WorkflowSpec`
 - at least one run per probe can execute with checked-in local sources or current repository state
+- collect steps record source quality evidence and block reports when source items are too noisy or off-target
+- source quality failures create source strategy tuning backlog instead of dead-end failures
 - no probe adds a bespoke daemon, scheduler, or top-level runtime path
 - reports and artifacts are linked to workflow runs and traces
 

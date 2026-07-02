@@ -12,7 +12,11 @@ def render_home(
     workflows: list[dict[str, Any]] | None = None,
     workflow_runs: list[dict[str, Any]] | None = None,
     planning_sessions: list[dict[str, Any]] | None = None,
+    session_logs: list[dict[str, Any]] | None = None,
     tooling_requests: list[dict[str, Any]] | None = None,
+    skill_proposals: list[dict[str, Any]] | None = None,
+    deliveries: list[dict[str, Any]] | None = None,
+    daemon: dict[str, Any] | None = None,
     health: dict[str, Any] | None = None,
     traces: list[dict[str, Any]],
 ) -> str:
@@ -26,8 +30,12 @@ def render_home(
     workflow_items = "\n".join(_workflow_item(item) for item in (workflows or []))
     workflow_run_items = "\n".join(_workflow_run_item(item) for item in (workflow_runs or []))
     planning_items = "\n".join(_planning_session_item(item) for item in (planning_sessions or []))
+    session_log_items = "\n".join(_session_log_item(item) for item in (session_logs or []))
     tooling_items = "\n".join(_tooling_item(item) for item in (tooling_requests or []))
+    skill_proposal_items = "\n".join(_skill_proposal_item(item) for item in (skill_proposals or []))
+    delivery_items = "\n".join(_delivery_item(item) for item in (deliveries or []))
     health_panel = _health_panel(health)
+    daemon_panel = _daemon_panel(daemon)
     trace_items = "\n".join(
         f"<li><code>{escape(str(item.get('event_type', '')))}</code></li>"
         for item in traces[-20:]
@@ -56,6 +64,10 @@ def render_home(
     {health_panel}
   </section>
   <section>
+    <h2>Runtime Daemon</h2>
+    {daemon_panel}
+  </section>
+  <section>
     <h2>Chat</h2>
     <form action="/messages" method="post">
       <textarea name="message" placeholder="Send a message to the local harness"></textarea>
@@ -74,6 +86,12 @@ def render_home(
   </section>
   <section>
     <h2>Workflows</h2>
+    <form action="/sources/web" method="post">
+      <input name="name" placeholder="Source name">
+      <input name="url" placeholder="https://example.com/list">
+      <input name="aliases" placeholder="aliases, comma separated">
+      <button type="submit">Add Web Source</button>
+    </form>
     <form action="/workflows/design" method="post">
       <textarea name="message" placeholder="Describe a workflow to design"></textarea>
       <br>
@@ -82,16 +100,38 @@ def render_home(
     <ul>{workflow_items or "<li>No workflows yet</li>"}</ul>
   </section>
   <section>
+    <h2>Harness Probe</h2>
+    <form action="/probes/workflow-builder" method="post">
+      <textarea name="request">반복 자동화 워크플로우 만들어줘</textarea>
+      <textarea name="answers">커뮤니티 웹 페이지를 소스로 쓰고, 필요한 경우 에이전트가 HTTP/API/browser/script 중 적절한 수집 전략을 선택하게 해.
+1분마다 수집하고 1시간마다 분석해서 웹 보고서와 ntfy 알림으로 알려줘.</textarea>
+      <br>
+      <button type="submit">Run Workflow Probe</button>
+    </form>
+  </section>
+  <section>
     <h2>Planning Sessions</h2>
     <ul>{planning_items or "<li>No planning sessions yet</li>"}</ul>
+  </section>
+  <section>
+    <h2>Session Logs</h2>
+    <ul>{session_log_items or "<li>No session logs yet</li>"}</ul>
   </section>
   <section>
     <h2>Tooling Backlog</h2>
     <ul>{tooling_items or "<li>No tooling requests yet</li>"}</ul>
   </section>
   <section>
+    <h2>Skill Proposals</h2>
+    <ul>{skill_proposal_items or "<li>No skill proposals yet</li>"}</ul>
+  </section>
+  <section>
     <h2>Workflow Runs</h2>
     <ul>{workflow_run_items or "<li>No workflow runs yet</li>"}</ul>
+  </section>
+  <section>
+    <h2>Deliveries</h2>
+    <ul>{delivery_items or "<li>No deliveries yet</li>"}</ul>
   </section>
   <section>
     <h2>Recent Trace</h2>
@@ -131,6 +171,25 @@ def _health_panel(health: dict[str, Any] | None) -> str:
 <ul>{failure_items or "<li>No recent failures</li>"}</ul>
 <form action="/ops/health/export" method="post">
   <button type="submit">Export Health Snapshot</button>
+</form>"""
+
+
+def _daemon_panel(daemon: dict[str, Any] | None) -> str:
+    if not daemon:
+        return "<p>Runtime daemon is not configured.</p>"
+    running = escape(str(daemon.get("running", False)))
+    tick_count = escape(str(daemon.get("tick_count", 0)))
+    last_tick_at = escape(str(daemon.get("last_tick_at") or ""))
+    last_error = daemon.get("last_error") or {}
+    error_text = escape(str(last_error.get("message", ""))) if isinstance(last_error, dict) else ""
+    last_result = escape(str(daemon.get("last_result") or "")[:1000])
+    return f"""
+<p><strong>running:</strong> {running} <strong>ticks:</strong> {tick_count}</p>
+<small>last tick: {last_tick_at}</small>
+<p>{error_text}</p>
+<pre>{last_result}</pre>
+<form action="/daemon/tick" method="post">
+  <button type="submit">Run Tick</button>
 </form>"""
 
 
@@ -244,6 +303,20 @@ def _planning_session_item(item: dict[str, Any]) -> str:
 </li>"""
 
 
+def _session_log_item(item: dict[str, Any]) -> str:
+    session_id = escape(str(item.get("session_id", "")))
+    title = escape(str(item.get("title", "")))
+    status = escape(str(item.get("status", "")))
+    event_count = escape(str(item.get("event_count", 0)))
+    metadata = item.get("metadata") or {}
+    planning_id = escape(str(metadata.get("planning_session_id", ""))) if isinstance(metadata, dict) else ""
+    return f"""
+<li>
+  <strong>{status}</strong> <code>{session_id}</code> {title}<br>
+  <small>events: {event_count} planning: {planning_id}</small>
+</li>"""
+
+
 def _tooling_item(item: dict[str, Any]) -> str:
     tooling_id = escape(str(item.get("tooling_id", "")))
     status = escape(str(item.get("status", "")))
@@ -258,4 +331,58 @@ def _tooling_item(item: dict[str, Any]) -> str:
   {capability}<br>
   <small>{reason}</small><br>
   <small>module: {module}</small>
+</li>"""
+
+
+def _skill_proposal_item(item: dict[str, Any]) -> str:
+    proposal_id = escape(str(item.get("proposal_id", "")))
+    name = escape(str(item.get("target_skill_name") or item.get("name", "")))
+    status = escape(str(item.get("status", "")))
+    description = escape(str(item.get("description", "")))
+    body = escape(str(item.get("proposal_body", ""))[:800])
+    review = item.get("review") or {}
+    mode = escape(str(review.get("mode", ""))) if isinstance(review, dict) else ""
+    validation = (
+        "ok"
+        if isinstance(review, dict) and review.get("validation_ok")
+        else escape(str(review.get("validation_error", "not validated"))) if isinstance(review, dict) else ""
+    )
+    diff = escape(str(review.get("diff", ""))[:2000]) if isinstance(review, dict) else ""
+    return f"""
+<li>
+  <strong>{status}</strong> <code>{proposal_id}</code> {name} {mode}<br>
+  {description}<br>
+  <pre>{body}</pre>
+  <small>validation: {validation}</small>
+  <pre>{diff}</pre>
+  <div class="row">
+    <form action="/skills/proposals/{proposal_id}/request-apply" method="post">
+      <button type="submit">Request Apply</button>
+    </form>
+    <form action="/skills/proposals/{proposal_id}/apply" method="post">
+      <input name="approval_id" placeholder="approved approval id">
+      <button type="submit">Apply</button>
+    </form>
+  </div>
+</li>"""
+
+
+def _delivery_item(item: dict[str, Any]) -> str:
+    delivery_id = escape(str(item.get("delivery_id", "")))
+    artifact_id = escape(str(item.get("artifact_id", "")))
+    channel = escape(str(item.get("channel", "")))
+    status = escape(str(item.get("status", "")))
+    attempts = escape(str(item.get("attempts", "")))
+    sent_at = escape(str(item.get("sent_at") or ""))
+    title = escape(str(item.get("title", "")))
+    body = escape(str(item.get("body", ""))[:500])
+    error = item.get("error") or {}
+    error_text = escape(str(error.get("message", ""))) if isinstance(error, dict) else ""
+    return f"""
+<li>
+  <strong>{status}</strong> <code>{delivery_id}</code> {channel}<br>
+  {title}<br>
+  <small>artifact: {artifact_id} attempts: {attempts} sent: {sent_at}</small>
+  <pre>{body}</pre>
+  <small>{error_text}</small>
 </li>"""

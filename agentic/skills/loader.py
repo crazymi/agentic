@@ -36,13 +36,17 @@ class SkillLoader:
     def load(self, path: str | Path) -> SkillPackage:
         path = Path(path)
         text = path.read_text(encoding="utf-8")
+        return self.load_text(text, path=path.parent)
+
+    def load_text(self, text: str, *, path: str | Path | None = None) -> SkillPackage:
+        package_path = Path(path) if path is not None else self.root
         match = _FRONTMATTER_RE.match(text)
         if match is None:
-            raise SkillLoadError(f"skill missing frontmatter: {path}")
+            raise SkillLoadError(f"skill missing frontmatter: {package_path}")
         raw_manifest = _parse_simple_yaml(match.group(1))
         body = match.group(2).strip()
         manifest = _manifest_from_data(raw_manifest)
-        return SkillPackage(path=path.parent, manifest=manifest, body=body)
+        return SkillPackage(path=package_path, manifest=manifest, body=body)
 
 
 def _manifest_from_data(data: dict[str, Any]) -> SkillManifest:

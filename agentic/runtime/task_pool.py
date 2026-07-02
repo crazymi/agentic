@@ -14,9 +14,14 @@ class TaskPool:
         store: TaskStore,
         executor: TaskExecutor,
         max_workers: int = 1,
+        heartbeat_interval_s: float = 15.0,
     ):
         self.store = store
-        self.worker = TaskWorker(store, executor)
+        self.worker = TaskWorker(
+            store,
+            executor,
+            heartbeat_interval_s=heartbeat_interval_s,
+        )
         self.max_workers = max_workers
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._lock = Lock()

@@ -53,6 +53,12 @@ class ToolBridge:
                 error_type="invalid_tool_arguments",
                 error_message=str(exc),
             )
+        except Exception as exc:
+            return self._record_failure(
+                call,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
 
         execution_result = ToolExecutionResult(
             tool=call.tool,

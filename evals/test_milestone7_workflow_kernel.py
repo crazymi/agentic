@@ -23,6 +23,7 @@ from agentic.workflow_kernel import (
     WorkflowBuilder,
     WorkflowDesigner,
     WorkflowInterpreter,
+    WorkflowLifecycleService,
     WorkflowStatus,
     WorkflowStore,
 )
@@ -78,6 +79,25 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
         self.assertIsNotNone(proposal.spec)
         self.assertEqual(proposal.spec.status, WorkflowStatus.PROPOSED)
         self.assertEqual(proposal.spec.intent_type, IntentType.SCHEDULED_WORKFLOW)
+
+    def test_workflow_designer_does_not_treat_meta_answer_as_cadence(self) -> None:
+        designer = WorkflowDesigner()
+        proposal = designer.design(
+            "주식갤과 미국 주식 레딧을 계속 관찰해서 트렌드를 보고해주는 반복 자동화 워크플로우를 만들어줘"
+        )
+
+        first = designer.continue_design(
+            proposal.session,
+            "처음에는 유저와 인터뷰해서 소스, 주기, 저장 위치, 보고 기준을 확정하게 해.",
+        )
+        self.assertIn("cadence", first.session.missing_slots)
+
+        second = designer.continue_design(
+            first.session,
+            "1분마다 수집하고 1시간마다 분석해서 웹 보고서와 ntfy 알림으로 알려줘.",
+        )
+        self.assertEqual(second.session.extracted_slots["cadence"], "interval:60s")
+        self.assertEqual(second.session.status, "proposed")
 
     def test_capability_planner_flags_external_and_script_capabilities(self) -> None:
         planner = CapabilityPlanner()
@@ -167,6 +187,15 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
             workflow_store = WorkflowStore(root / "workflows.sqlite3")
             artifact_store = ArtifactStore(root / "artifacts.sqlite3")
             source_store, resource_store, source_runtime, _ = _local_source_spec(root)
+            source_store.add_source(
+                SourceDefinition(
+                    kind=SourceKind.LOCAL_FILE,
+                    name="Mail source",
+                    locator=(root / "source.jsonl").as_uri(),
+                    enabled=True,
+                    metadata={"aliases": ["mail"]},
+                )
+            )
             app = create_app(
                 channel_loop=None,
                 approvals=ApprovalService(ApprovalStore(root / "approvals.jsonl"), trace),
@@ -182,6 +211,13 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
                         resource_store=resource_store,
                     )
                 ),
+                workflow_lifecycle=WorkflowLifecycleService(
+                    workflow_store=workflow_store,
+                    source_store=source_store,
+                    schedule_store=ScheduleStore(root / "schedules.sqlite3"),
+                    artifact_store=artifact_store,
+                    resource_store=resource_store,
+                ),
             )
             response = _request(
                 app,
@@ -191,12 +227,11 @@ class Milestone7WorkflowKernelTests(unittest.TestCase):
             )
             workflows = _request(app, "GET", "/workflows").json()
             workflow_id = workflows[0]["workflow_id"]
-            _request(app, "POST", f"/workflows/{workflow_id}/approve")
-            _request(app, "POST", f"/workflows/{workflow_id}/activate")
             _request(app, "POST", f"/workflows/{workflow_id}/run")
             runs = _request(app, "GET", "/workflow-runs").json()
 
         self.assertEqual(response.status_code, 303)
+        self.assertEqual(workflows[0]["status"], "active")
         self.assertEqual(len(runs), 1)
         self.assertEqual(runs[0]["status"], "completed")
 

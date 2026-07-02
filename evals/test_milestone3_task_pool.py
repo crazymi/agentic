@@ -85,6 +85,29 @@ class Milestone3TaskPoolTests(unittest.TestCase):
         self.assertEqual(first.task_id, task.task_id)
         self.assertIsNone(second)
 
+    def test_worker_refreshes_heartbeat_during_long_executor(self) -> None:
+        with _store() as store:
+            task = store.create_task(kind="block", input={})
+            executor = BlockingExecutor()
+            pool = TaskPool(
+                store=store,
+                executor=executor,
+                max_workers=1,
+                heartbeat_interval_s=0.05,
+            )
+            try:
+                pool.kick()
+                self.assertTrue(executor.started.wait(timeout=2))
+                _wait_for_event_count(store, task.task_id, "task_heartbeat", count=2)
+                running = store.get_task(task.task_id)
+                executor.release.set()
+                _wait_for_status(store, task.task_id, DurableTaskStatus.COMPLETED)
+            finally:
+                pool.shutdown()
+
+        self.assertEqual(running.status, DurableTaskStatus.RUNNING)
+        self.assertIsNotNone(running.last_heartbeat_at)
+
 
 class _store:
     def __enter__(self) -> TaskStore:
@@ -102,6 +125,26 @@ def _wait_for_status(store: TaskStore, task_id: str, status: DurableTaskStatus) 
             return
         time.sleep(0.01)
     raise AssertionError(f"task {task_id} did not reach {status}")
+
+
+def _wait_for_event_count(
+    store: TaskStore,
+    task_id: str,
+    event_type: str,
+    *,
+    count: int,
+) -> None:
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        events = [
+            event
+            for event in store.list_events(task_id)
+            if event["event_type"] == event_type
+        ]
+        if len(events) >= count:
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"task {task_id} did not record {count} {event_type} events")
 
 
 if __name__ == "__main__":

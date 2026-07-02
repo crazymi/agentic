@@ -97,6 +97,8 @@ class WorkflowDesigner:
         slot = session.missing_slots[0]
         slots = dict(session.extracted_slots)
         slots[slot] = self._normalize_slot_answer(slot, answer)
+        if answer.strip():
+            slots[f"{slot}_raw"] = answer.strip()
         missing = [item for item in self._required_slots(session.intent.intent_type) if not slots.get(item)]
         question = self._question_for(missing[0]) if missing else None
         answers = [
@@ -145,10 +147,22 @@ class WorkflowDesigner:
         cleaned = answer.strip()
         if not cleaned:
             return ""
+        lowered = cleaned.lower()
+        if slot == "source":
+            inferred = WorkflowDesigner._source_from(lowered)
+            return inferred or cleaned
+        if slot == "cadence":
+            inferred = WorkflowDesigner._cadence_from(lowered, IntentType.SCHEDULED_WORKFLOW)
+            if inferred and inferred != "interval:manual_review":
+                return inferred
+            if any(token in lowered for token in ("인터뷰", "확정", "decide", "clarify")):
+                return ""
+            return inferred or cleaned
+        if slot == "output":
+            return WorkflowDesigner._output_from(lowered) or cleaned
         if slot == "constraints":
             return cleaned
         if slot == "retry_policy":
-            lowered = cleaned.lower()
             if "1분" in lowered or "1 minute" in lowered:
                 return "interval:60s"
             if "5분" in lowered or "5 minute" in lowered:
@@ -190,9 +204,20 @@ class WorkflowDesigner:
             return "web_page"
         if any(token in text for token in ("repo", "repository", "리포", "코드")):
             return "repo"
-        if any(token in text for token in ("승인", "모바일", "ntfy", "채팅", "chat", "approval")):
-            return "channel"
-        if any(token in text for token in ("idea", "아이디어", "메모", "노트")):
+        if any(
+            token in text
+            for token in (
+                "idea",
+                "아이디어",
+                "메모",
+                "노트",
+                "채팅 기록",
+                "chat history",
+                "승인 이벤트",
+                "approval event",
+                "채널 이벤트",
+            )
+        ):
             return "channel"
         return ""
 
@@ -230,6 +255,8 @@ class WorkflowDesigner:
     def _cadence_from(text: str, intent_type: IntentType) -> str:
         if "1분" in text or "1 minute" in text:
             return "interval:60s"
+        if "1시간" in text or "1 hour" in text or "hourly" in text:
+            return "interval:3600s"
         if "30분" in text or "30 minute" in text:
             return "interval:1800s"
         if "매일" in text or "daily" in text:
@@ -342,11 +369,19 @@ class WorkflowDesigner:
             success_criteria=["Collect source items", "Analyze against the goal", "Produce a reviewable report"],
             intent_type=intent_type,
             triggers=[{"type": trigger_type, "value": cadence}],
-            inputs={"source": source, "cadence": cadence, "output": slots["output"]},
+            inputs={
+                "source": source,
+                "cadence": cadence,
+                "output": slots["output"],
+                "slot_answers": _slot_answers(slots),
+            },
             sources=[{"type": source, "mode": "requires_real_source_binding"}],
             steps=steps,
             status=WorkflowStatus.PROPOSED,
-            policy={"risk": slots["risk"], "activation_requires_approval": True},
+            policy={
+                "risk": slots["risk"],
+                "activation_requires_approval": slots["risk"] != "low",
+            },
             outputs=[{"type": slots["output"], "channel": slots.get("alert_path", "web")}],
             evals=[{"type": "real_local_source_probe", "required": True}],
             assumptions=assumptions,
@@ -460,6 +495,7 @@ class WorkflowDesigner:
                 "retry_policy": retry_policy,
                 "approval_boundary": slots["approval_boundary"],
                 "output": slots["output"],
+                "slot_answers": _slot_answers(slots),
             },
             sources=[{"type": slots["source"], "mode": "requires_real_source_binding"}],
             steps=steps,
@@ -474,3 +510,14 @@ class WorkflowDesigner:
             evals=[{"type": "live_browser_transaction_probe", "required": True}],
             assumptions=assumptions,
         )
+
+
+def _slot_answers(slots: dict[str, Any]) -> dict[str, str]:
+    answers: dict[str, str] = {}
+    for key, value in slots.items():
+        if not key.endswith("_raw"):
+            continue
+        slot = key[: -len("_raw")]
+        if value:
+            answers[slot] = str(value)
+    return answers

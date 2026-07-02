@@ -39,6 +39,23 @@ This loop is deliberately smaller than a self-modifying agent:
 - No live external action unless policy allows it.
 - No invented success. A probe must say whether it completed, paused for approval, or exposed missing tooling.
 
+## Codex Operator Bootstrap
+
+The repo also has a lightweight Codex-operator bootstrap under `.agent/`:
+
+- `.agent/OPERATING_ROUTINE.md` defines the start/work/finish routine.
+- `.agent/MEMORY.md` keeps durable repo/user/workflow context that is useful before editing.
+- `.agent/LESSONS.md` keeps reusable lessons from actual work and feedback.
+- `.agent/TASK_LOG.md` keeps short recent operator context.
+
+These files do not replace the structured runtime experience store. They are the human-readable operating layer that tells Codex when to inspect and update:
+
+- `traces/experience.jsonl` for structured evidence from probes, real-bench runs, decisions, bottlenecks, and lessons
+- `docs/work_log.md` for project history and roadmap impact
+- Skill Workshop proposal state for repeated workflow procedures that should not become active skills without review
+
+Use `.agent/` sparingly. Durable evidence should stay machine-readable when possible, and repeated procedures should graduate through the Skill Workshop proposal boundary before becoming active skills.
+
 ## Implemented Backbone
 
 The first implementation is `agentic.experience`:

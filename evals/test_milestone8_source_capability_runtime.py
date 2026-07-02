@@ -70,8 +70,55 @@ class Milestone8SourceCapabilityRuntimeTests(unittest.TestCase):
                     enabled=True,
                 )
             )
+            runtime_without_web = SourceRuntime(
+                source_store=source_store,
+                resource_store=resource_store,
+                collectors={SourceKind.LOCAL_FILE: runtime.collectors[SourceKind.LOCAL_FILE]},
+            )
             with self.assertRaises(ValueError):
-                runtime.collect(web.source_id)
+                runtime_without_web.collect(web.source_id)
+
+    def test_web_source_honors_required_href_fragments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            html = root / "forum.html"
+            html.write_text(
+                """
+                <html><body>
+                  <a href="https://example.test/board/view/?id=stock&no=1">AI 반도체 수요 토론</a>
+                  <a href="https://example.test/board/view/?id=dcbest&no=2">다른 게시판 인기글</a>
+                  <a href="https://example.test/board/view/?id=stock&no=3">환율과 기술주 변동성</a>
+                  <a href="https://example.test/board/view/?id=stock&no=4">개인 투자 심리 변화</a>
+                </body></html>
+                """,
+                encoding="utf-8",
+            )
+            source_store = SourceStore(root / "sources.sqlite3")
+            resource_store = ResourceStore(root / "resources.sqlite3")
+            source = source_store.add_source(
+                SourceDefinition(
+                    kind=SourceKind.WEB_PAGE,
+                    name="Forum",
+                    locator=html.as_uri(),
+                    enabled=True,
+                    metadata={
+                        "extract": {
+                            "href_contains": ["/board/view"],
+                            "href_contains_all": ["id=stock"],
+                            "limit": 10,
+                            "min_text_chars": 4,
+                        },
+                        "quality": {"min_items": 3},
+                    },
+                )
+            )
+
+            result = SourceRuntime(source_store=source_store, resource_store=resource_store).collect(source.source_id)
+            resources = [resource_store.get(resource_id) for resource_id in result.resource_ids]
+
+        self.assertTrue(result.quality.ok, result.quality.to_record())
+        self.assertEqual(result.collected_count, 3)
+        self.assertTrue(all("id=stock" in resource.uri for resource in resources))
 
     def test_credential_refs_store_references_not_secrets(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
