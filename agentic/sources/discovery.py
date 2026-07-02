@@ -291,6 +291,8 @@ class SourceCandidateService:
         parsed = urlparse(candidate.locator)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("auto_register requires an http(s) locator")
+        if _looks_like_placeholder_locator(parsed.netloc):
+            raise ValueError("auto_register rejected placeholder locator")
         existing = self._find_existing(candidate.locator)
         if existing is not None:
             return existing
@@ -343,6 +345,7 @@ class SourceDiscoveryEnqueuer:
         user_request: str,
         missing_sources: list[str],
         feedback: str = "",
+        session_log_id: str = "",
     ) -> TaskRecord:
         existing = self._find_existing(workflow_id, missing_sources)
         if existing is not None:
@@ -358,6 +361,7 @@ class SourceDiscoveryEnqueuer:
                 "user_request": user_request,
                 "missing_sources": missing_sources,
                 "feedback": feedback.strip(),
+                "session_log_id": session_log_id.strip(),
             },
         )
 
@@ -426,6 +430,21 @@ class SourceDiscoveryExecutor:
         user_request = str(task.input.get("user_request") or "")
         missing_sources = [str(item) for item in task.input.get("missing_sources") or [] if str(item)]
         user_feedback = str(task.input.get("feedback") or "").strip()
+        session_log_id = str(task.input.get("session_log_id") or "").strip()
+        existing_source_names = _existing_source_names(state_dir)
+        append_source_discovery_session_event(
+            state_dir,
+            session_log_id,
+            "source_discovery_started",
+            role="runtime",
+            content=f"Source discovery started for {', '.join(missing_sources) or 'unknown source'}.",
+            payload={
+                "task_id": task.task_id,
+                "workflow_id": workflow_id,
+                "missing_sources": missing_sources,
+                "feedback_present": bool(user_feedback),
+            },
+        )
         context.raise_if_cancelled(task.task_id)
         context.heartbeat(task.task_id)
         search_result = None
@@ -439,6 +458,7 @@ class SourceDiscoveryExecutor:
                         user_request=user_request,
                         missing_sources=missing_sources,
                         feedback=search_feedback,
+                        existing_source_names=existing_source_names,
                     )
                 )
             )
@@ -453,9 +473,11 @@ class SourceDiscoveryExecutor:
                 "Do not search for the notification channel unless that is the missing source."
             )
         if search_result is None:
-            return {"ok": False, "stage": "search", "error": {"type": "no_search_attempt"}}
+            result = {"ok": False, "stage": "search", "error": {"type": "no_search_attempt"}}
+            _record_source_discovery_result(state_dir, session_log_id, task.task_id, workflow_id, result)
+            return result
         if not search_result.ok:
-            return {
+            result = {
                 "ok": False,
                 "stage": "search",
                 "error": {
@@ -463,6 +485,8 @@ class SourceDiscoveryExecutor:
                     "message": search_result.error_message,
                 },
             }
+            _record_source_discovery_result(state_dir, session_log_id, task.task_id, workflow_id, result)
+            return result
         context.raise_if_cancelled(task.task_id)
         context.heartbeat(task.task_id)
         candidate_result = candidate_loop.run_once(
@@ -472,11 +496,13 @@ class SourceDiscoveryExecutor:
                     user_request=user_request,
                     missing_sources=missing_sources,
                     search_report=_compact_search_reports(search_reports or [search_result.report or ""]),
+                    feedback_present=bool(user_feedback),
+                    existing_source_names=existing_source_names,
                 )
             )
         )
         if not candidate_result.ok:
-            return {
+            result = {
                 "ok": False,
                 "stage": "candidate",
                 "search_report": "\n\n".join(search_reports) or search_result.report,
@@ -485,6 +511,8 @@ class SourceDiscoveryExecutor:
                     "message": candidate_result.error_message,
                 },
             }
+            _record_source_discovery_result(state_dir, session_log_id, task.task_id, workflow_id, result)
+            return result
         context.raise_if_cancelled(task.task_id)
         context.heartbeat(task.task_id)
         lifecycle = build_source_discovery_lifecycle_service(state_dir)
@@ -494,7 +522,7 @@ class SourceDiscoveryExecutor:
             limit=20,
         )
         sources = SourceStore(state_dir / "sources.sqlite3").list_sources(enabled=True, limit=20)
-        return {
+        result = {
             "ok": bool(advance.get("ok")) if advance else bool(sources),
             "stage": "advanced" if advance else "candidate_created",
             "search_report": search_result.report,
@@ -503,6 +531,8 @@ class SourceDiscoveryExecutor:
             "sources": [source.to_record() for source in sources],
             "workflow_lifecycle": advance,
         }
+        _record_source_discovery_result(state_dir, session_log_id, task.task_id, workflow_id, result)
+        return result
 
     def _config(self, task: TaskRecord) -> AppConfig:
         if self.config is not None:
@@ -531,20 +561,94 @@ def build_source_discovery_lifecycle_service(state_dir: str | Path) -> WorkflowL
     )
 
 
+def append_source_discovery_session_event(
+    state_dir: str | Path,
+    session_log_id: str,
+    event_type: str,
+    *,
+    role: str = "runtime",
+    content: str = "",
+    payload: dict[str, Any] | None = None,
+) -> Any | None:
+    if not session_log_id:
+        return None
+    from agentic.sessions import SessionLogStore
+
+    store = SessionLogStore(Path(state_dir) / "sessions.sqlite3")
+    try:
+        store.get_session(session_log_id)
+    except KeyError:
+        return None
+    return store.append_event(
+        session_log_id,
+        event_type,
+        role=role,
+        content=content,
+        payload=payload or {},
+    )
+
+
+def _record_source_discovery_result(
+    state_dir: str | Path,
+    session_log_id: str,
+    task_id: str,
+    workflow_id: str,
+    result: dict[str, Any],
+) -> None:
+    error = result.get("error") if isinstance(result.get("error"), dict) else {}
+    candidates = result.get("candidates") if isinstance(result.get("candidates"), list) else []
+    sources = result.get("sources") if isinstance(result.get("sources"), list) else []
+    ok = bool(result.get("ok"))
+    stage = str(result.get("stage") or "")
+    content = (
+        f"Source discovery {'completed' if ok else 'failed'} at stage {stage}."
+        f" candidates={len(candidates)} sources={len(sources)}"
+    )
+    append_source_discovery_session_event(
+        state_dir,
+        session_log_id,
+        "source_discovery_result",
+        role="subagent",
+        content=content,
+        payload={
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "ok": ok,
+            "stage": stage,
+            "candidate_count": len(candidates),
+            "source_count": len(sources),
+            "error": {
+                "type": str(error.get("type") or ""),
+                "message": str(error.get("message") or "")[:500],
+            } if error else {},
+        },
+    )
+
+
 def _search_instruction(
     *,
     workflow_id: str,
     user_request: str,
     missing_sources: list[str],
     feedback: str = "",
+    existing_source_names: list[str] | None = None,
 ) -> str:
+    tried = ", ".join((existing_source_names or [])[:5])
+    feedback_rule = (
+        "If runtime feedback critiques a previous report or source, search for a better or more precise alternative using the user's goal; "
+        "do not simply repeat an already tried source name unless the feedback explicitly asks to keep it. "
+        if feedback
+        else ""
+    )
     return (
         "You are the source-discovery subagent in a local Harness. "
         "You were not given a URL. Use an allowed tool to discover candidate public sources. "
         "Output exactly one JSON tool call and no commentary. Prefer web_search for unknown public web sources. "
         "Do not set a search provider unless the user explicitly requested one; the runtime will choose an available provider. "
         "Do not invent a URL. Do not register a source yet. "
+        f"{feedback_rule}"
         f"Runtime feedback: {feedback}. "
+        f"Already tried source names: {tried}. "
         f"Workflow id: {workflow_id}. "
         f"Missing source labels: {missing_sources}. "
         f"Original user request: {user_request}. "
@@ -597,13 +701,23 @@ def _candidate_instruction(
     user_request: str,
     missing_sources: list[str],
     search_report: str,
+    feedback_present: bool = False,
+    existing_source_names: list[str] | None = None,
 ) -> str:
     clipped = search_report[:1200]
     requested_source = missing_sources[0] if missing_sources else "source"
+    tried = ", ".join((existing_source_names or [])[:5])
+    feedback_rule = (
+        "User feedback says a previous source/report was weak. Prefer a clearly better alternative over an already tried source name. "
+        if feedback_present
+        else ""
+    )
     return (
         "Choose the best public read-only source candidate from the search results. "
         "Call source_candidate exactly once. Output one JSON object only. Do not invent URLs. "
         "Keep the JSON short. Do not include aliases, rationale, or evidence unless explicitly required. "
+        f"{feedback_rule}"
+        f"Already tried source names: {tried}. "
         f"Workflow id: {workflow_id}. "
         f"Missing source labels: {missing_sources}. "
         f"User source context: {user_request[:500]}. "
@@ -611,7 +725,7 @@ def _candidate_instruction(
         "Use this compact shape and replace only the locator/name from search results: "
         '{"tool":"source_candidate","arguments":{"action":"create",'
         f'"workflow_id":"{workflow_id}","requested_source":"{requested_source}",'
-        '"kind":"web_page","name":"short name","locator":"https://result-url",'
+        '"kind":"web_page","name":"short name","locator":"copy_url_from_search_result",'
         '"confidence":0.8,"auto_register":true}}'
     )
 
@@ -629,3 +743,27 @@ def _dedupe(values: list[str]) -> list[str]:
         seen.add(key)
         result.append(cleaned)
     return result
+
+
+def _existing_source_names(state_dir: str | Path) -> list[str]:
+    try:
+        sources = SourceStore(Path(state_dir) / "sources.sqlite3").list_sources(enabled=True, limit=50)
+    except Exception:
+        return []
+    names: list[str] = []
+    for source in sources:
+        if source.name:
+            names.append(source.name)
+        metadata = dict(source.metadata or {})
+        for alias in metadata.get("aliases") or []:
+            if alias:
+                names.append(str(alias))
+    return _dedupe(names)
+
+
+def _looks_like_placeholder_locator(netloc: str) -> bool:
+    lowered = netloc.strip().lower()
+    return lowered in {
+        "result-url",
+        "actual-result-url",
+    } or "result-url" in lowered

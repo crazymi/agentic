@@ -50,6 +50,7 @@ from agentic.sources.discovery import (
     SOURCE_DISCOVERY_TASK_KIND,
     SourceDiscoveryEnqueuer,
     SourceDiscoveryExecutor,
+    append_source_discovery_session_event,
 )
 from agentic.sources.strategy_workshop import (
     SourceStrategyProposalStore,
@@ -765,6 +766,19 @@ def _source_discovery(config: AppConfig, args: argparse.Namespace) -> None:
         user_request=_workflow_source_context(spec.to_record()),
         missing_sources=missing_sources,
         feedback=args.feedback,
+        session_log_id=str((spec.inputs or {}).get("session_log_id") or ""),
+    )
+    append_source_discovery_session_event(
+        state_dir,
+        str((spec.inputs or {}).get("session_log_id") or ""),
+        "source_discovery_feedback",
+        role="user",
+        content=args.feedback.strip(),
+        payload={
+            "task_id": task.task_id,
+            "workflow_id": spec.workflow_id,
+            "missing_sources": missing_sources,
+        },
     )
     workflow_store.append_event(
         "workflow_source_discovery_feedback_enqueued",
@@ -808,7 +822,13 @@ def _declared_source_labels(spec: dict[str, object]) -> list[str]:
     for source in spec.get("sources") or []:
         if not isinstance(source, dict):
             continue
-        label = str(source.get("type") or source.get("name") or "").strip()
+        label = str(
+            source.get("requested")
+            or source.get("type")
+            or source.get("name")
+            or source.get("kind")
+            or ""
+        ).strip()
         if label:
             labels.append(label)
     return labels
@@ -820,7 +840,7 @@ def _workflow_source_context(spec: dict[str, object]) -> str:
     parts = [
         f"description: {spec.get('description') or ''}",
         f"goal: {spec.get('goal') or ''}",
-        f"sources: {spec.get('sources') or []}",
+        f"source_labels: {_declared_source_labels(spec)}",
     ]
     if isinstance(slot_answers, dict):
         for key in sorted(slot_answers):

@@ -2,6 +2,18 @@
 
 Reusable lessons from actual work, failures, and user feedback.
 
+## 2026-07-02 - Source Feedback Needs Semantic Admission
+
+- Context: A real no-preseed front-door run reached report delivery and the Agent later found an alternative source after user feedback, but structural quality gates still admitted menu/category-heavy reports as useful.
+- Lesson: Source quality is not only link cleanliness or item count. The Harness needs a semantic/source-usefulness gate that can fail reports whose evidence does not match the user's stated goal, then route that failure back into an auditable Agent/user feedback loop.
+- Apply next time: Treat `report_quality.ok=true` as insufficient for user usefulness when evidence is menu/category/navigation-like or off-intent. Create a reviewable feedback artifact rather than adding a site-specific filter.
+
+## 2026-07-02 - Prompt Examples Must Not Be Runtime Values
+
+- Context: During feedback-driven source discovery, the local model copied the example placeholder `https://result-url`, and the Harness initially registered it as a real source.
+- Lesson: Any example value that appears in a tool-call prompt must either be impossible to submit or deterministically rejected at admission. Local models can and will copy scaffolding text.
+- Apply next time: Use compact placeholders that fail validation, and add admission checks for placeholder-looking locators, file paths, credentials, selectors, and generated script names before they enter runtime state.
+
 ## 2026-07-02 - Codex Is Harness Operator, Not Workflow Performer
 
 - Context: User corrected the operator boundary again after Codex drifted toward improving a concrete crawling path. The correct role is to observe the Harness agent, answer as `User` inside the Harness session, and only add generic primitives when the agent repeatedly lacks a reusable capability.

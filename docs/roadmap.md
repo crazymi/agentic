@@ -52,6 +52,8 @@ These are framework-level modules, not individual user skills.
 | Full Session Log | Preserve the complete user-agent-runtime transcript for audits | request, interview turns, agent instruction, agent response, generated workflow artifact |
 | Workflow Lifecycle Gate | Move WorkflowSpecs through deterministic review/source-binding/approval/activation | block approval when live source bindings are missing |
 | Source Binding Strategy | Bind agent-named sources to enabled source definitions | alias-based live web source binding, read-only admission, multi-source collect |
+| Source Discovery Feedback Loop | Let user feedback re-enter the agent/source-discovery path without hidden operator URLs or filters | noisy report -> user feedback event -> agent searches alternatives -> source candidate stored |
+| Source Candidate Admission | Reject placeholder or non-real candidates before they can become enabled runtime sources | block copied example locators such as `result-url` |
 | Source Quality Gate | Separate successful collection from useful collection before analysis/reporting | block navigation-heavy or off-target source runs before report artifacts are created |
 | Source Identity Gate | Preserve requested source identity through extraction and recovery | query/path-bound forum links such as `id=stock_new2`, not adjacent board links |
 | Source Strategy Tuning | Turn source quality failures into reviewable strategy proposals | tooling backlog -> source metadata proposal -> apply -> rerun quality gate |

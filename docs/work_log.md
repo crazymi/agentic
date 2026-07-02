@@ -4,6 +4,7 @@ This log records substantive project work. Keep the table of contents updated wh
 
 ## Table Of Contents
 
+- [2026-07-02 13:26 KST - No-Preseed Source Feedback Loop](#2026-07-02-1326-kst---no-preseed-source-feedback-loop)
 - [2026-07-02 13:08 KST - Operator Boundary Deduplication](#2026-07-02-1308-kst---operator-boundary-deduplication)
 - [2026-07-02 13:04 KST - Dotenv Support For API Keys](#2026-07-02-1304-kst---dotenv-support-for-api-keys)
 - [2026-07-02 12:50 KST - Operator Role Boundary Hardening](#2026-07-02-1250-kst---operator-role-boundary-hardening)
@@ -58,6 +59,47 @@ This log records substantive project work. Keep the table of contents updated wh
 - [2026-07-02 10:31 KST - Front-Door Session Log And Unattended Report Delivery](#2026-07-02-1031-kst---front-door-session-log-and-unattended-report-delivery)
 - [2026-07-02 10:39 KST - Finish-Line Benchmark For Blurry Requests](#2026-07-02-1039-kst---finish-line-benchmark-for-blurry-requests)
 - [2026-07-02 10:59 KST - Report Quality And Source Identity Gate](#2026-07-02-1059-kst---report-quality-and-source-identity-gate)
+
+## 2026-07-02 13:26 KST - No-Preseed Source Feedback Loop
+
+Summary:
+
+- Ran a real no-preseed front-door crawling benchmark and then interacted with the Harness as `User` when the Agent's report was not useful enough.
+- Added generic session-feedback, source-discovery audit, active-lifecycle, and candidate-admission hardening. No site-specific crawler, selector, filter, URL mapping, or report shape was added.
+
+Changed areas:
+
+- `agentic/sources/discovery.py`: source-discovery tasks now carry `session_log_id`, record start/result events into session logs, receive feedback-aware alternative-search instructions, and reject copied placeholder locators such as `https://result-url`.
+- `agentic/app/cli.py`: `source-discovery retry` now logs the feedback as a user session event, preserves the original requested source label, and redacts bound source locators/source ids from retry context.
+- `agentic/workflow_kernel/lifecycle.py`: active workflow lifecycle advance is idempotent and preserves requested source labels when rebinding.
+- `evals/test_source_discovery.py`: added regression coverage for feedback logging, context redaction, active lifecycle idempotence, requested-label preservation, feedback-aware instructions, and placeholder rejection.
+- `docs/roadmap.md`: added Source Discovery Feedback Loop and Source Candidate Admission primitives.
+
+Verification:
+
+- Focused evals: `.venv/bin/python -m unittest evals.test_source_discovery evals.test_workflow_lifecycle_session_log evals.test_finish_line_benchmark`
+- Config check: `.venv/bin/python -m agentic.app.cli config-check`
+- Real no-preseed benchmark: `/tmp/agentic-nopreseed-frontdoor-20260702-1319`
+  - User request plus two answers created workflow `wf_02be6c4346ff45fbba922ceb168481a2`.
+  - Agent source-discovery task `task_f5994f1c584240af845d69f682a55435` found and registered a source without operator-provided URL.
+  - Runtime produced report artifact `art_866c8b63390a4efd8b0ac3803364f2ea` and sent ntfy delivery `del_5cb6bafc77c84b00a3ac1caa6fa9fdd4`.
+  - Score reached `98/100` for the no-preseed non-synthesis path.
+  - User feedback was logged as session events and led Agent to discover alternative source candidate `스톡커`.
+
+Roadmap impact:
+
+- The Harness now supports an auditable feedback loop: weak report -> user feedback event -> Agent source rediscovery -> candidate/source registration -> workflow rebinding.
+- Remaining 100/100 blockers are semantic usefulness/admission and source-switch review. Structural source quality still accepts menu/category pages as high quality, and local model source discovery can still choose weak or placeholder-like candidates unless admission catches them.
+
+Next step:
+
+- Add a generic semantic/source-usefulness gate that can fail menu/category-only reports, produce a reviewable feedback artifact, and require Agent/user review before switching to a new source candidate.
+
+Lessons learned:
+
+- User feedback must be preserved as a session event, not hidden CLI context.
+- Active workflow lifecycle needs to be idempotent because feedback/recovery tasks can run after activation.
+- Prompt examples must not be admissible runtime values; placeholder-looking candidates need deterministic rejection.
 
 ## 2026-07-02 13:08 KST - Operator Boundary Deduplication
 

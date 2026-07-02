@@ -2,6 +2,13 @@
 
 Recent concise operator-facing task context. Longer project history belongs in `docs/work_log.md`.
 
+## 2026-07-02 13:26 KST - No-Preseed Source Feedback Loop
+
+- Request: Continue toward a useful crawling Harness without Codex hand-coding crawlers, URLs, filters, or workflows.
+- Done: Ran real no-preseed front-door benchmark in `/tmp/agentic-nopreseed-frontdoor-20260702-1319`; Agent discovered a source, runtime delivered a report, then Codex gave user feedback inside the session for noisy/weak results. Added generic session-feedback audit, context redaction, active lifecycle idempotence, feedback-aware source discovery, and placeholder candidate admission.
+- Evidence: Workflow `wf_02be6c4346ff45fbba922ceb168481a2`, sent delivery `del_5cb6bafc77c84b00a3ac1caa6fa9fdd4`, source feedback events in session `sess_a1415b772e894f6cafdb8a4ea3ec2cfe`, alternative source candidate `스톡커` discovered by Agent after feedback.
+- Next: Build a semantic/source-usefulness gate and source-switch review loop so menu/category reports or weak source switches become reviewable feedback tasks instead of being counted as useful.
+
 ## 2026-07-02 13:08 KST - Boundary Deduplicated At AGENTS Top
 
 - Request: Re-state the project and Codex/operator role boundary clearly at the very top of `AGENTS.md`.

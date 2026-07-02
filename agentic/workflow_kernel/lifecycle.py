@@ -238,6 +238,20 @@ class WorkflowLifecycleService:
                 blockers=blockers,
             )
         spec = self.workflow_store.get_spec(workflow_id)
+        if spec.status == WorkflowStatus.ACTIVE:
+            self.workflow_store.append_event(
+                "workflow_lifecycle_advance_already_active",
+                {"source_binding": binding.to_record()},
+                workflow_id=workflow_id,
+            )
+            return WorkflowLifecycleAdvanceResult(
+                workflow_id=workflow_id,
+                ok=True,
+                status="active",
+                review=review.to_record(),
+                source_binding=binding.to_record(),
+                workflow=spec.to_record(),
+            )
         if not _can_auto_activate(spec, binding, auto_activate_read_only=auto_activate_read_only):
             blockers.append({"type": "approval_required_before_activation"})
             self.workflow_store.append_event(
@@ -276,6 +290,7 @@ class WorkflowLifecycleService:
             workflow_id=spec.workflow_id,
             user_request=_source_discovery_context(spec),
             missing_sources=binding.missing_sources,
+            session_log_id=str((spec.inputs or {}).get("session_log_id") or ""),
         )
         self.workflow_store.append_event(
             "workflow_source_discovery_enqueued",
@@ -391,11 +406,12 @@ def _requested_sources(spec: WorkflowSpec) -> list[str]:
     values: list[str] = []
     for source in spec.sources:
         value = (
-            source.get("source_id")
-            or source.get("kind")
+            source.get("requested")
             or source.get("type")
             or source.get("name")
+            or source.get("kind")
             or source.get("connector_id")
+            or source.get("source_id")
         )
         if value:
             values.append(str(value))
